@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #define TG_API_BASE    "https://api.telegram.org/bot"
-#define MAX_URL_LEN    512
 #define POLL_TIMEOUT   30   /* seconds – Telegram long-poll window */
 #define MAX_REPLY_LEN  4096 /* Telegram message limit is 4096 chars */
 #define MAX_FILE_MB    20   /* Telegram bot file size limit */

@@ -98,11 +98,24 @@ int config_load(Config *cfg)
         
         const char *sb_url = require_env("SUPABASE_URL");
         if (!sb_url) return -1;
-        snprintf(cfg->supabase_url, MAX_URL_LEN, "%s", sb_url);
+        if (strncmp(sb_url, "http://", 7) != 0 && strncmp(sb_url, "https://", 8) != 0) {
+            snprintf(cfg->supabase_url, MAX_URL_LEN, "https://%s", sb_url);
+        } else {
+            snprintf(cfg->supabase_url, MAX_URL_LEN, "%s", sb_url);
+        }
         
         const char *sb_key = require_env("SUPABASE_ANON_KEY");
         if (!sb_key) return -1;
         snprintf(cfg->supabase_anon_key, MAX_TOKEN_LEN, "%s", sb_key);
+
+        const char *sb_svc = getenv("SUPABASE_SERVICE_KEY");
+        if (sb_svc && sb_svc[0] != '\0') {
+            snprintf(cfg->supabase_service_key, MAX_TOKEN_LEN, "%s", sb_svc);
+            LOG_DEBUG("supabase service key loaded");
+        } else {
+            LOG_WARN("SUPABASE_SERVICE_KEY not set, using anon key (RLS applies)");
+            snprintf(cfg->supabase_service_key, MAX_TOKEN_LEN, "%s", sb_key);
+        }
         
         snprintf(cfg->supabase_bucket, MAX_PATH_LEN, "%s",
                 env_or_default("SUPABASE_BUCKET", "receipts"));

@@ -14,6 +14,11 @@ add_compile_options(
 )
 add_link_options(-Wl,--gc-sections)
 
+# ── Dependencies (must be before Sources so PostgreSQL_FOUND is available) ─────
+find_package(CURL REQUIRED)
+find_package(SQLite3 REQUIRED)
+find_package(PostgreSQL)
+
 # ── Sources ───────────────────────────────────────────────────────────────────
 if(NOT DEFINED CJSON_DIR)
     set(CJSON_DIR "${CMAKE_SOURCE_DIR}/third_party/cjson")
@@ -46,10 +51,7 @@ target_include_directories(tgbot PRIVATE
     ${CJSON_DIR}
 )
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
-find_package(CURL REQUIRED)
-find_package(SQLite3 REQUIRED)
-find_package(PostgreSQL)
+# ── Linker ────────────────────────────────────────────────────────────────────
 
 target_link_libraries(tgbot PRIVATE
     CURL::libcurl
@@ -96,6 +98,11 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/config.c
+        ${CMAKE_SOURCE_DIR}/src/gemini.c
+    )
+
+    target_link_libraries(tgbot_tests PRIVATE
+        CURL::libcurl
     )
 
     add_test(NAME tgbot_tests COMMAND tgbot_tests)

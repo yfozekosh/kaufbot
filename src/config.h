@@ -50,9 +50,10 @@ typedef struct {
     /* Storage backend config */
     StorageBackendType storage_backend;
     char   storage_path[MAX_PATH_LEN];       /* for local */
-    char   supabase_url[MAX_URL_LEN];        /* for supabase */
-    char   supabase_anon_key[MAX_TOKEN_LEN]; /* for supabase */
-    char   supabase_bucket[MAX_PATH_LEN];    /* bucket name */
+    char   supabase_url[MAX_URL_LEN];          /* for supabase */
+    char   supabase_anon_key[MAX_TOKEN_LEN];   /* for supabase */
+    char   supabase_service_key[MAX_TOKEN_LEN];/* for supabase (bypasses RLS) */
+    char   supabase_bucket[MAX_PATH_LEN];      /* bucket name */
     
     /* Database backend config */
     DBBackendType db_backend;

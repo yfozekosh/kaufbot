@@ -34,7 +34,7 @@ static int db_exec(PGconn *conn, const char *sql)
     return 0;
 }
 
-static char *escape_literal(PGconn *conn, const char *str)
+__attribute__((unused)) static char *escape_literal(PGconn *conn, const char *str)
 {
     char *escaped = PQescapeLiteral(conn, str, strlen(str));
     if (!escaped) {
@@ -139,9 +139,12 @@ static int postgres_find_by_hash(DBBackend *backend, const char *hash, FileRecor
         "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
         " FROM files WHERE file_hash = $1 LIMIT 1";
 
-    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, &hash, NULL, NULL, 0);
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        LOG_ERROR("query error: %s", PQerrorMessage(db->conn));
+    const char *params[1] = { hash };
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+    ExecStatusType status = PQresultStatus(res);
+    if (status != PGRES_TUPLES_OK) {
+        LOG_ERROR("find_by_hash query error (status=%d): %s", (int)status, PQerrorMessage(db->conn));
+        LOG_ERROR("find_by_hash sqlstate: %s", PQresultErrorField(res, PG_DIAG_SQLSTATE));
         PQclear(res);
         return -1;
     }
@@ -291,8 +294,9 @@ static int postgres_get_parsed_receipt(DBBackend *backend, int64_t file_id, Pars
 
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "%lld", (long long)file_id);
+    const char *params[1] = { id_str };
 
-    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, (const char *const *)&id_str, NULL, NULL, 0);
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         LOG_ERROR("query error: %s", PQerrorMessage(db->conn));
         PQclear(res);
@@ -376,5 +380,9 @@ static const DBBackendOps postgres_ops = {
 
 DBBackend *db_backend_postgres_open(const Config *cfg)
 {
-    return postgres_ops.open(cfg);
+    DBBackend *backend = postgres_ops.open(cfg);
+    if (backend) {
+        backend->ops = &postgres_ops;
+    }
+    return backend;
 }

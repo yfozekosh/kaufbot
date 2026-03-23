@@ -26,4 +26,13 @@ char *gemini_extract_text(GeminiClient *client,
  * On error: returns NULL and writes a message to stderr. */
 char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text);
 
+/* Extract text from a raw Gemini API JSON response.
+ * Parses candidates[0].content.parts[0].text.
+ * Returns heap-allocated string or NULL on error. */
+char *gemini_parse_api_response(const char *api_json);
+
+/* Strip markdown code fences (```json ... ```) in-place.
+ * Returns pointer to trimmed content within the same buffer. */
+char *strip_markdown_json(char *raw);
+
 #endif /* GEMINI_H */

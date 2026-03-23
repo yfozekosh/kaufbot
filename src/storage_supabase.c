@@ -7,11 +7,33 @@
 #include <string.h>
 #include <curl/curl.h>
 
+/* Composed URLs = base_url + path_prefix + bucket + "/" + filename */
+#define MAX_COMPOSED_URL (MAX_URL_LEN + MAX_PATH_LEN + MAX_PATH_LEN + 64)
+
 typedef struct {
     char base_url[MAX_URL_LEN];
     char anon_key[MAX_TOKEN_LEN];
     char bucket[MAX_PATH_LEN];
+    int  is_v2_key; /* 1 if sb_secret_ / sb_publishable_ format (not JWT) */
 } SupabaseStorage;
+
+/* Build auth headers. V2 keys use only apikey; JWT keys use Authorization: Bearer. */
+static struct curl_slist *build_auth_headers(SupabaseStorage *storage)
+{
+    struct curl_slist *headers = NULL;
+    char hdr[MAX_TOKEN_LEN + 64];
+
+    if (storage->is_v2_key) {
+        snprintf(hdr, sizeof(hdr), "apikey: %s", storage->anon_key);
+        headers = curl_slist_append(headers, hdr);
+    } else {
+        snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s", storage->anon_key);
+        headers = curl_slist_append(headers, hdr);
+        snprintf(hdr, sizeof(hdr), "apikey: %s", storage->anon_key);
+        headers = curl_slist_append(headers, hdr);
+    }
+    return headers;
+}
 
 /* ── grow buffer for curl ────────────────────────────────────────────────── */
 
@@ -54,7 +76,7 @@ static void growbuf_free(GrowBuf *buf)
 static const char B64_CHARS[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static char *base64_encode(const uint8_t *src, size_t len)
+__attribute__((unused)) static char *base64_encode(const uint8_t *src, size_t len)
 {
     size_t out_len = ((len + 2) / 3) * 4 + 1;
     char *out = malloc(out_len);
@@ -88,9 +110,10 @@ static StorageBackend *supabase_open(const Config *cfg)
         LOG_ERROR("failed to allocate storage");
         return NULL;
     }
-    snprintf(storage->base_url, sizeof(storage->base_url), "%s/storage/v1", cfg->supabase_url);
-    snprintf(storage->anon_key, sizeof(storage->anon_key), "%s", cfg->supabase_anon_key);
+    snprintf(storage->base_url, sizeof(storage->base_url), "%s", cfg->supabase_url);
+    snprintf(storage->anon_key, sizeof(storage->anon_key), "%s", cfg->supabase_service_key);
     snprintf(storage->bucket, sizeof(storage->bucket), "%s", cfg->supabase_bucket);
+    storage->is_v2_key = (strncmp(cfg->supabase_service_key, "sb_", 3) == 0);
 
     StorageBackend *backend = calloc(1, sizeof(StorageBackend));
     if (!backend) {
@@ -122,8 +145,8 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
     LOG_INFO("uploading file to Supabase: %s/%s (%zu bytes)", storage->bucket, filename, len);
 
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s/object/%s/%s", storage->base_url, storage->bucket, filename);
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket, filename);
 
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -132,10 +155,7 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     }
 
     /* Build headers */
-    struct curl_slist *headers = NULL;
-    char auth_header[MAX_TOKEN_LEN + 64];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", storage->anon_key);
-    headers = curl_slist_append(headers, auth_header);
+    struct curl_slist *headers = build_auth_headers(storage);
     headers = curl_slist_append(headers, "Content-Type: application/octet-stream");
     headers = curl_slist_append(headers, "x-upsert: true");
 
@@ -184,16 +204,13 @@ static int supabase_file_exists(StorageBackend *backend, const char *filename)
     SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
     LOG_DEBUG("checking file existence in Supabase: %s", filename);
 
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s/object/%s/%s", storage->base_url, storage->bucket, filename);
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket, filename);
 
     CURL *curl = curl_easy_init();
     if (!curl) return -1;
 
-    struct curl_slist *headers = NULL;
-    char auth_header[MAX_TOKEN_LEN + 64];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", storage->anon_key);
-    headers = curl_slist_append(headers, auth_header);
+    struct curl_slist *headers = build_auth_headers(storage);
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
@@ -220,18 +237,15 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
     
     /* Try to get public URL first */
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s/object/public/%s/%s", 
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/public/%s/%s", 
              storage->base_url, storage->bucket, filename);
     
     /* Check if bucket is public by making a HEAD request */
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
 
-    struct curl_slist *headers = NULL;
-    char auth_header[MAX_TOKEN_LEN + 64];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", storage->anon_key);
-    headers = curl_slist_append(headers, auth_header);
+    struct curl_slist *headers = build_auth_headers(storage);
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
@@ -247,9 +261,9 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
 
     if (res == CURLE_OK && http_code == 200) {
         /* Public bucket - return public URL */
-        char *public_url = malloc(MAX_URL_LEN);
+        char *public_url = malloc(MAX_COMPOSED_URL);
         if (public_url) {
-            snprintf(public_url, MAX_URL_LEN, "%s/storage/v1/object/public/%s/%s",
+            snprintf(public_url, MAX_COMPOSED_URL, "%s/storage/v1/object/public/%s/%s",
                      storage->base_url, storage->bucket, filename);
         }
         return public_url;
@@ -259,8 +273,8 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     LOG_DEBUG("bucket is private, generating signed URL for: %s", filename);
     
     /* Create signed URL via Supabase API */
-    char sign_url[MAX_URL_LEN];
-    snprintf(sign_url, sizeof(sign_url), "%s/object/sign/%s/%s",
+    char sign_url[MAX_COMPOSED_URL];
+    snprintf(sign_url, sizeof(sign_url), "%s/storage/v1/object/sign/%s/%s",
              storage->base_url, storage->bucket, filename);
 
     curl = curl_easy_init();
@@ -273,10 +287,7 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     cJSON_Delete(body);
 
     GrowBuf resp = {0};
-    headers = NULL;
-    char auth_header[MAX_TOKEN_LEN + 64];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", storage->anon_key);
-    headers = curl_slist_append(headers, auth_header);
+    headers = build_auth_headers(storage);
     headers = curl_slist_append(headers, "Content-Type: application/json");
 
     curl_easy_setopt(curl, CURLOPT_URL, sign_url);
@@ -312,9 +323,9 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     char *result = NULL;
     if (cJSON_IsString(signed_url)) {
         /* Build full URL */
-        result = malloc(MAX_URL_LEN);
+        result = malloc(MAX_COMPOSED_URL);
         if (result) {
-            snprintf(result, MAX_URL_LEN, "%s%s", storage->base_url, signed_url->valuestring);
+            snprintf(result, MAX_COMPOSED_URL, "%s/storage/v1%s", storage->base_url, signed_url->valuestring);
         }
     }
 
@@ -336,5 +347,9 @@ static const StorageBackendOps supabase_ops = {
 
 StorageBackend *storage_backend_supabase_open(const Config *cfg)
 {
-    return supabase_ops.open(cfg);
+    StorageBackend *backend = supabase_ops.open(cfg);
+    if (backend) {
+        backend->ops = &supabase_ops;
+    }
+    return backend;
 }

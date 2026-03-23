@@ -60,10 +60,10 @@ static inline void db_backend_close(DBBackend *db)
 
 static inline int db_backend_find_by_hash(DBBackend *db, const char *hash, FileRecord *out)
 {
-    if (db && db->ops && db->ops->find_by_hash) {
-        return db->ops->find_by_hash(db, hash, out);
-    }
-    return -1;
+    if (!db) { LOG_ERROR("db_backend_find_by_hash: db is NULL"); return -1; }
+    if (!db->ops) { LOG_ERROR("db_backend_find_by_hash: db->ops is NULL"); return -1; }
+    if (!db->ops->find_by_hash) { LOG_ERROR("db_backend_find_by_hash: db->ops->find_by_hash is NULL"); return -1; }
+    return db->ops->find_by_hash(db, hash, out);
 }
 
 static inline int db_backend_insert(DBBackend *db, FileRecord *rec)

@@ -1,8 +1,10 @@
 /* ── JSON/Parsing tests ───────────────────────────────────────────────────── */
 
 #include "test_runner.h"
+#include "gemini.h"
 #include "../third_party/cjson/cJSON.h"
 #include <string.h>
+#include <stdlib.h>
 
 /* Test valid receipt JSON structure */
 TEST_CASE(json_valid_receipt_structure)
@@ -186,6 +188,42 @@ TEST_CASE(json_invalid_returns_null)
     TEST_PASS();
 }
 
+TEST_CASE(json_markdown_wrapped_fails_parse)
+{
+    const char *markdown_json = "```json\n{\"total\": 10.00}\n```";
+    cJSON *json = cJSON_Parse(markdown_json);
+    ASSERT_TRUE(json == NULL); /* cJSON rejects markdown fences */
+    TEST_PASS();
+}
+
+TEST_CASE(json_markdown_fails_then_stripped_ok)
+{
+    const char *markdown_json = "```json\n{\"total\": 10.00}\n```";
+
+    /* Verify raw markdown fails */
+    cJSON *raw = cJSON_Parse(markdown_json);
+    ASSERT_TRUE(raw == NULL);
+
+    /* Simulate stripping: skip past ```json\n and up to ``` */
+    char buf[256];
+    strncpy(buf, markdown_json, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *start = buf;
+    if (strncmp(start, "```json", 7) == 0) {
+        start += 7;
+        while (*start == '\n' || *start == '\r') start++;
+    }
+    char *end = strstr(start, "```");
+    if (end) *end = '\0';
+
+    /* Stripped version should parse */
+    cJSON *json = cJSON_Parse(start);
+    ASSERT_NOT_NULL(json);
+    cJSON_Delete(json);
+    TEST_PASS();
+}
+
 TEST_CASE(json_extract_value)
 {
     const char *json_str = "{\"total_sum\": 123.45}";
@@ -197,5 +235,162 @@ TEST_CASE(json_extract_value)
     ASSERT_TRUE(total->valuedouble > 123.4 && total->valuedouble < 123.5);
     
     cJSON_Delete(json);
+    TEST_PASS();
+}
+
+/* ── Mocked Gemini API response tests ────────────────────────────────────── */
+
+/* Helper: build a Gemini API response JSON with given text content */
+static char *mock_gemini_response(const char *text)
+{
+    /* {"candidates":[{"content":{"parts":[{"text":"..."}]}}]} */
+    cJSON *root = cJSON_CreateObject();
+    cJSON *candidates = cJSON_AddArrayToObject(root, "candidates");
+    cJSON *cand = cJSON_CreateObject();
+    cJSON *content = cJSON_CreateObject();
+    cJSON *parts = cJSON_AddArrayToObject(content, "parts");
+    cJSON *part = cJSON_CreateObject();
+    cJSON_AddStringToObject(part, "text", text);
+    cJSON_AddItemToArray(parts, part);
+    cJSON_AddItemToObject(cand, "content", content);
+    cJSON_AddItemToArray(candidates, cand);
+    char *result = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return result;
+}
+
+/* Helper: build a Gemini API error response */
+static char *mock_gemini_error(const char *message)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON *error = cJSON_AddObjectToObject(root, "error");
+    cJSON_AddStringToObject(error, "message", message);
+    char *result = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return result;
+}
+
+/* Happy: plain JSON text */
+TEST_CASE(gemini_mock_happy_plain_json)
+{
+    const char *receipt = "{\"store\":\"Kaufland\",\"total\":15.99}";
+    char *api_resp = mock_gemini_response(receipt);
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_NOT_NULL(result);
+    ASSERT_STR_EQ(receipt, result);
+    free(result);
+    TEST_PASS();
+}
+
+/* Happy: markdown-wrapped JSON */
+TEST_CASE(gemini_mock_happy_markdown_wrapped)
+{
+    const char *receipt = "{\"store\":\"REWE\",\"total\":8.50}";
+    char wrapped[512];
+    snprintf(wrapped, sizeof(wrapped), "```json\n%s\n```", receipt);
+    char *api_resp = mock_gemini_response(wrapped);
+
+    char *raw = gemini_parse_api_response(api_resp);
+    free(api_resp);
+    ASSERT_NOT_NULL(raw);
+
+    char *stripped = strip_markdown_json(raw);
+    ASSERT_STR_EQ(receipt, stripped);
+    free(raw);
+    TEST_PASS();
+}
+
+/* Happy: markdown with extra whitespace */
+TEST_CASE(gemini_mock_happy_markdown_whitespace)
+{
+    const char *receipt = "{\"store\":\"Edeka\",\"total\":22.00}";
+    char wrapped[512];
+    snprintf(wrapped, sizeof(wrapped), "```json\n  \n%s\n  \n```", receipt);
+    char *api_resp = mock_gemini_response(wrapped);
+
+    char *raw = gemini_parse_api_response(api_resp);
+    free(api_resp);
+    ASSERT_NOT_NULL(raw);
+
+    char *stripped = strip_markdown_json(raw);
+    cJSON *json = cJSON_Parse(stripped);
+    ASSERT_NOT_NULL(json);
+    cJSON_Delete(json);
+    free(raw);
+    TEST_PASS();
+}
+
+/* Sad: API error response */
+TEST_CASE(gemini_mock_api_error)
+{
+    char *api_resp = mock_gemini_error("Invalid API key");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* Sad: empty candidates array */
+TEST_CASE(gemini_mock_no_candidates)
+{
+    char *api_resp = strdup("{\"candidates\":[]}");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* Sad: missing content/parts */
+TEST_CASE(gemini_mock_missing_parts)
+{
+    char *api_resp = strdup("{\"candidates\":[{\"content\":{}}]}");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* Sad: text is not a string */
+TEST_CASE(gemini_mock_text_not_string)
+{
+    char *api_resp = strdup("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":123}]}}]}");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* Sad: completely invalid JSON */
+TEST_CASE(gemini_mock_invalid_json)
+{
+    char *api_resp = strdup("not json at all");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* Sad: empty string */
+TEST_CASE(gemini_mock_empty_string)
+{
+    char *api_resp = strdup("");
+
+    char *result = gemini_parse_api_response(api_resp);
+    free(api_resp);
+
+    ASSERT_TRUE(result == NULL);
     TEST_PASS();
 }

@@ -8,6 +8,80 @@
 #include <string.h>
 #include <curl/curl.h>
 
+/* Strip markdown code fences (```json ... ```) from a string in-place.
+ * Returns pointer to start of trimmed content within the same buffer. */
+char *strip_markdown_json(char *raw)
+{
+    char *start = raw;
+    if (strncmp(start, "```json", 7) == 0) {
+        start += 7;
+        while (*start == '\n' || *start == '\r') start++;
+    } else if (strncmp(start, "```", 3) == 0) {
+        start += 3;
+        while (*start == '\n' || *start == '\r') start++;
+    }
+    char *end = strstr(start, "```");
+    if (end) *end = '\0';
+
+    /* Trim leading whitespace */
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') start++;
+
+    /* Trim trailing whitespace */
+    size_t len = strlen(start);
+    while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\t' ||
+                       start[len-1] == '\n' || start[len-1] == '\r')) {
+        start[--len] = '\0';
+    }
+    return start;
+}
+
+/* Extract text from Gemini API JSON response.
+ * Returns heap-allocated string from candidates[0].content.parts[0].text, or NULL on error. */
+char *gemini_parse_api_response(const char *api_json)
+{
+    cJSON *json = cJSON_Parse(api_json);
+    if (!json) {
+        LOG_ERROR("failed to parse response JSON");
+        return NULL;
+    }
+
+    /* Check for API-level error */
+    cJSON *err_obj = cJSON_GetObjectItem(json, "error");
+    if (err_obj) {
+        cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
+        LOG_ERROR("API error: %s", msg ? msg->valuestring : "unknown");
+        cJSON_Delete(json);
+        return NULL;
+    }
+
+    /* Navigate: candidates[0].content.parts[0].text */
+    cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
+    if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
+        LOG_ERROR("no candidates in response");
+        cJSON_Delete(json);
+        return NULL;
+    }
+    cJSON *cand0  = cJSON_GetArrayItem(candidates, 0);
+    cJSON *cont   = cJSON_GetObjectItem(cand0, "content");
+    cJSON *parts  = cJSON_GetObjectItem(cont,  "parts");
+    if (!cJSON_IsArray(parts) || cJSON_GetArraySize(parts) == 0) {
+        LOG_ERROR("no parts in response");
+        cJSON_Delete(json);
+        return NULL;
+    }
+    cJSON *part0 = cJSON_GetArrayItem(parts, 0);
+    cJSON *text  = cJSON_GetObjectItem(part0, "text");
+    if (!cJSON_IsString(text)) {
+        LOG_ERROR("no text in response part");
+        cJSON_Delete(json);
+        return NULL;
+    }
+
+    char *result = strdup(text->valuestring);
+    cJSON_Delete(json);
+    return result; /* caller must free() */
+}
+
 #define GEMINI_API_BASE "https://generativelanguage.googleapis.com/v1beta/models"
 #define MAX_API_KEY_LEN  256
 #define MAX_MODEL_LEN    128
@@ -92,8 +166,9 @@ static const char *parse_prompt(void)
            "extracted from a receipt photo via OCR. The layout is important, as item "
            "descriptions often span multiple lines.\n\n"
            "Your task is to extract the data and return it strictly as a JSON document "
-           "matching the schema below. Do not include any conversational text, explanations, "
-           "or Markdown formatting outside of the JSON block.\n\n"
+           "matching the schema below. IMPORTANT: Return ONLY the raw JSON. Do NOT wrap it "
+           "in markdown code blocks (```json). Do NOT include any conversational text, "
+           "explanations, or formatting before or after the JSON.\n\n"
            "Extraction Rules:\n\n"
            "Multi-line Items: Item names often wrap to the next line (e.g., an ID and "
            "partial name on line 1, and the rest of the name on line 2). Merge these into "
@@ -250,48 +325,10 @@ char *gemini_extract_text(GeminiClient *client,
     }
 
     /* 5. Parse response */
-    cJSON *json = cJSON_Parse(resp.data);
+    char *result = gemini_parse_api_response(resp.data);
     free(resp.data);
+    if (!result) return NULL;
 
-    if (!json) {
-        LOG_ERROR("failed to parse response JSON");
-        return NULL;
-    }
-
-    /* Check for API-level error */
-    cJSON *err_obj = cJSON_GetObjectItem(json, "error");
-    if (err_obj) {
-        cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        LOG_ERROR("API error: %s", msg ? msg->valuestring : "unknown");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    /* Navigate: candidates[0].content.parts[0].text */
-    cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
-    if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        LOG_ERROR("no candidates in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *cand0   = cJSON_GetArrayItem(candidates, 0);
-    cJSON *cont    = cJSON_GetObjectItem(cand0, "content");
-    cJSON *parts2  = cJSON_GetObjectItem(cont,  "parts");
-    if (!cJSON_IsArray(parts2) || cJSON_GetArraySize(parts2) == 0) {
-        LOG_ERROR("no parts in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *part0 = cJSON_GetArrayItem(parts2, 0);
-    cJSON *text  = cJSON_GetObjectItem(part0, "text");
-    if (!cJSON_IsString(text)) {
-        LOG_ERROR("no text in response part");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    char *result = strdup(text->valuestring);
-    cJSON_Delete(json);
     LOG_INFO("text extraction successful");
     return result; /* caller must free() */
 }
@@ -377,48 +414,13 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     }
 
     /* 4. Parse response */
-    cJSON *json = cJSON_Parse(resp.data);
+    char *raw = gemini_parse_api_response(resp.data);
     free(resp.data);
+    if (!raw) return NULL;
 
-    if (!json) {
-        LOG_ERROR("failed to parse response JSON");
-        return NULL;
-    }
-
-    /* Check for API-level error */
-    cJSON *err_obj = cJSON_GetObjectItem(json, "error");
-    if (err_obj) {
-        cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        LOG_ERROR("API error: %s", msg ? msg->valuestring : "unknown");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    /* Navigate: candidates[0].content.parts[0].text */
-    cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
-    if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        LOG_ERROR("no candidates in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *cand0   = cJSON_GetArrayItem(candidates, 0);
-    cJSON *cont    = cJSON_GetObjectItem(cand0, "content");
-    cJSON *parts2  = cJSON_GetObjectItem(cont,  "parts");
-    if (!cJSON_IsArray(parts2) || cJSON_GetArraySize(parts2) == 0) {
-        LOG_ERROR("no parts in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *part0 = cJSON_GetArrayItem(parts2, 0);
-    cJSON *text  = cJSON_GetObjectItem(part0, "text");
-    if (!cJSON_IsString(text)) {
-        LOG_ERROR("no text in response part");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    char *result = strdup(text->valuestring);
-    cJSON_Delete(json);
+    char *start = strip_markdown_json(raw);
+    char *result = strdup(start);
+    free(raw);
     LOG_INFO("receipt parsing successful");
     return result; /* caller must free() */
 }

@@ -30,6 +30,7 @@ TEST_CASE(db_open_close)
 {
     setup_db();
     ASSERT_NOT_NULL(g_test_db);
+    ASSERT_NOT_NULL(g_test_db->ops);
     teardown_db();
     TEST_PASS();
 }
