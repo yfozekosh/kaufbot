@@ -14,6 +14,9 @@
 # EXTERNAL cache entries
 ########################
 
+//Build test suite
+BUILD_TESTS:BOOL=ON
+
 //No help, variable specified on the command line.
 CJSON_DIR:UNINITIALIZED=third_party/cjson
 

@@ -65,6 +65,16 @@ CMAKE_BINARY_DIR = /home/yfozekosh/temp/kaufbot/build
 #=============================================================================
 # Targets provided globally by CMake.
 
+# Special rule for the target test
+test:
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running tests..."
+	/usr/bin/ctest --force-new-ctest-process $(ARGS)
+.PHONY : test
+
+# Special rule for the target test
+test/fast: test
+.PHONY : test/fast
+
 # Special rule for the target edit_cache
 edit_cache:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running CMake cache editor..."
@@ -174,6 +184,19 @@ tgbot/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/build
 .PHONY : tgbot/fast
 
+#=============================================================================
+# Target rules for targets named tgbot_tests
+
+# Build rule for target.
+tgbot_tests: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tgbot_tests
+.PHONY : tgbot_tests
+
+# fast build rule for target.
+tgbot_tests/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/build
+.PHONY : tgbot_tests/fast
+
 src/bot.o: src/bot.c.o
 .PHONY : src/bot.o
 
@@ -204,6 +227,7 @@ src/config.o: src/config.c.o
 # target to build an object file
 src/config.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/config.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/config.c.o
 .PHONY : src/config.c.o
 
 src/config.i: src/config.c.i
@@ -212,6 +236,7 @@ src/config.i: src/config.c.i
 # target to preprocess a source file
 src/config.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/config.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/config.c.i
 .PHONY : src/config.c.i
 
 src/config.s: src/config.c.s
@@ -220,6 +245,7 @@ src/config.s: src/config.c.s
 # target to generate assembly for a file
 src/config.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/config.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/config.c.s
 .PHONY : src/config.c.s
 
 src/db.o: src/db.c.o
@@ -228,6 +254,7 @@ src/db.o: src/db.c.o
 # target to build an object file
 src/db.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/db.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/db.c.o
 .PHONY : src/db.c.o
 
 src/db.i: src/db.c.i
@@ -236,6 +263,7 @@ src/db.i: src/db.c.i
 # target to preprocess a source file
 src/db.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/db.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/db.c.i
 .PHONY : src/db.c.i
 
 src/db.s: src/db.c.s
@@ -244,6 +272,7 @@ src/db.s: src/db.c.s
 # target to generate assembly for a file
 src/db.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/db.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/db.c.s
 .PHONY : src/db.c.s
 
 src/gemini.o: src/gemini.c.o
@@ -324,6 +353,7 @@ src/storage.o: src/storage.c.o
 # target to build an object file
 src/storage.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/storage.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/storage.c.o
 .PHONY : src/storage.c.o
 
 src/storage.i: src/storage.c.i
@@ -332,6 +362,7 @@ src/storage.i: src/storage.c.i
 # target to preprocess a source file
 src/storage.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/storage.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/storage.c.i
 .PHONY : src/storage.c.i
 
 src/storage.s: src/storage.c.s
@@ -340,7 +371,152 @@ src/storage.s: src/storage.c.s
 # target to generate assembly for a file
 src/storage.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/src/storage.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/src/storage.c.s
 .PHONY : src/storage.c.s
+
+tests/main.o: tests/main.c.o
+.PHONY : tests/main.o
+
+# target to build an object file
+tests/main.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/main.c.o
+.PHONY : tests/main.c.o
+
+tests/main.i: tests/main.c.i
+.PHONY : tests/main.i
+
+# target to preprocess a source file
+tests/main.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/main.c.i
+.PHONY : tests/main.c.i
+
+tests/main.s: tests/main.c.s
+.PHONY : tests/main.s
+
+# target to generate assembly for a file
+tests/main.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/main.c.s
+.PHONY : tests/main.c.s
+
+tests/test_config.o: tests/test_config.c.o
+.PHONY : tests/test_config.o
+
+# target to build an object file
+tests/test_config.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_config.c.o
+.PHONY : tests/test_config.c.o
+
+tests/test_config.i: tests/test_config.c.i
+.PHONY : tests/test_config.i
+
+# target to preprocess a source file
+tests/test_config.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_config.c.i
+.PHONY : tests/test_config.c.i
+
+tests/test_config.s: tests/test_config.c.s
+.PHONY : tests/test_config.s
+
+# target to generate assembly for a file
+tests/test_config.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_config.c.s
+.PHONY : tests/test_config.c.s
+
+tests/test_db.o: tests/test_db.c.o
+.PHONY : tests/test_db.o
+
+# target to build an object file
+tests/test_db.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_db.c.o
+.PHONY : tests/test_db.c.o
+
+tests/test_db.i: tests/test_db.c.i
+.PHONY : tests/test_db.i
+
+# target to preprocess a source file
+tests/test_db.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_db.c.i
+.PHONY : tests/test_db.c.i
+
+tests/test_db.s: tests/test_db.c.s
+.PHONY : tests/test_db.s
+
+# target to generate assembly for a file
+tests/test_db.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_db.c.s
+.PHONY : tests/test_db.c.s
+
+tests/test_edge_cases.o: tests/test_edge_cases.c.o
+.PHONY : tests/test_edge_cases.o
+
+# target to build an object file
+tests/test_edge_cases.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_edge_cases.c.o
+.PHONY : tests/test_edge_cases.c.o
+
+tests/test_edge_cases.i: tests/test_edge_cases.c.i
+.PHONY : tests/test_edge_cases.i
+
+# target to preprocess a source file
+tests/test_edge_cases.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_edge_cases.c.i
+.PHONY : tests/test_edge_cases.c.i
+
+tests/test_edge_cases.s: tests/test_edge_cases.c.s
+.PHONY : tests/test_edge_cases.s
+
+# target to generate assembly for a file
+tests/test_edge_cases.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_edge_cases.c.s
+.PHONY : tests/test_edge_cases.c.s
+
+tests/test_json.o: tests/test_json.c.o
+.PHONY : tests/test_json.o
+
+# target to build an object file
+tests/test_json.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_json.c.o
+.PHONY : tests/test_json.c.o
+
+tests/test_json.i: tests/test_json.c.i
+.PHONY : tests/test_json.i
+
+# target to preprocess a source file
+tests/test_json.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_json.c.i
+.PHONY : tests/test_json.c.i
+
+tests/test_json.s: tests/test_json.c.s
+.PHONY : tests/test_json.s
+
+# target to generate assembly for a file
+tests/test_json.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_json.c.s
+.PHONY : tests/test_json.c.s
+
+tests/test_storage.o: tests/test_storage.c.o
+.PHONY : tests/test_storage.o
+
+# target to build an object file
+tests/test_storage.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_storage.c.o
+.PHONY : tests/test_storage.c.o
+
+tests/test_storage.i: tests/test_storage.c.i
+.PHONY : tests/test_storage.i
+
+# target to preprocess a source file
+tests/test_storage.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_storage.c.i
+.PHONY : tests/test_storage.c.i
+
+tests/test_storage.s: tests/test_storage.c.s
+.PHONY : tests/test_storage.s
+
+# target to generate assembly for a file
+tests/test_storage.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/tests/test_storage.c.s
+.PHONY : tests/test_storage.c.s
 
 third_party/cjson/cJSON.o: third_party/cjson/cJSON.c.o
 .PHONY : third_party/cjson/cJSON.o
@@ -348,6 +524,7 @@ third_party/cjson/cJSON.o: third_party/cjson/cJSON.c.o
 # target to build an object file
 third_party/cjson/cJSON.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/third_party/cjson/cJSON.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/third_party/cjson/cJSON.c.o
 .PHONY : third_party/cjson/cJSON.c.o
 
 third_party/cjson/cJSON.i: third_party/cjson/cJSON.c.i
@@ -356,6 +533,7 @@ third_party/cjson/cJSON.i: third_party/cjson/cJSON.c.i
 # target to preprocess a source file
 third_party/cjson/cJSON.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/third_party/cjson/cJSON.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/third_party/cjson/cJSON.c.i
 .PHONY : third_party/cjson/cJSON.c.i
 
 third_party/cjson/cJSON.s: third_party/cjson/cJSON.c.s
@@ -364,6 +542,7 @@ third_party/cjson/cJSON.s: third_party/cjson/cJSON.c.s
 # target to generate assembly for a file
 third_party/cjson/cJSON.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/third_party/cjson/cJSON.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/third_party/cjson/cJSON.c.s
 .PHONY : third_party/cjson/cJSON.c.s
 
 # Help Target
@@ -378,7 +557,9 @@ help:
 	@echo "... install/strip"
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
+	@echo "... test"
 	@echo "... tgbot"
+	@echo "... tgbot_tests"
 	@echo "... src/bot.o"
 	@echo "... src/bot.i"
 	@echo "... src/bot.s"
@@ -400,6 +581,24 @@ help:
 	@echo "... src/storage.o"
 	@echo "... src/storage.i"
 	@echo "... src/storage.s"
+	@echo "... tests/main.o"
+	@echo "... tests/main.i"
+	@echo "... tests/main.s"
+	@echo "... tests/test_config.o"
+	@echo "... tests/test_config.i"
+	@echo "... tests/test_config.s"
+	@echo "... tests/test_db.o"
+	@echo "... tests/test_db.i"
+	@echo "... tests/test_db.s"
+	@echo "... tests/test_edge_cases.o"
+	@echo "... tests/test_edge_cases.i"
+	@echo "... tests/test_edge_cases.s"
+	@echo "... tests/test_json.o"
+	@echo "... tests/test_json.i"
+	@echo "... tests/test_json.s"
+	@echo "... tests/test_storage.o"
+	@echo "... tests/test_storage.i"
+	@echo "... tests/test_storage.s"
 	@echo "... third_party/cjson/cJSON.o"
 	@echo "... third_party/cjson/cJSON.i"
 	@echo "... third_party/cjson/cJSON.s"

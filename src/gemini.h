@@ -21,4 +21,9 @@ char *gemini_extract_text(GeminiClient *client,
                           const uint8_t *data, size_t len,
                           const char *filename);
 
+/* Send OCR-extracted text to Gemini for receipt parsing.
+ * Returns a heap-allocated NUL-terminated JSON string — caller must free().
+ * On error: returns NULL and writes a message to stderr. */
+char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text);
+
 #endif /* GEMINI_H */

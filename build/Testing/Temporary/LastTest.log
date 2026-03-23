@@ -1,0 +1,113 @@
+Start testing: Mar 23 11:22 CET
+----------------------------------------------------------
+1/1 Testing: tgbot_tests
+1/1 Test: tgbot_tests
+Command: "/home/yfozekosh/temp/kaufbot/build/tgbot_tests"
+Directory: /home/yfozekosh/temp/kaufbot/build
+"tgbot_tests" start time: Mar 23 11:22 CET
+Output:
+----------------------------------------------------------
+[TEST] Running storage_sha256_empty... PASSED
+[TEST] Running storage_sha256_simple... PASSED
+[TEST] Running storage_sha256_length... PASSED
+[TEST] Running storage_gen_filename_format... PASSED
+[TEST] Running storage_gen_filename_no_ext... PASSED
+[TEST] Running storage_gen_filename_empty_ext... PASSED
+[TEST] Running storage_ocr_filename... PASSED
+[TEST] Running storage_ocr_filename_no_ext... PASSED
+[TEST] Running storage_mime_jpg... PASSED
+[TEST] Running storage_mime_jpeg... PASSED
+[TEST] Running storage_mime_png... PASSED
+[TEST] Running storage_mime_pdf... PASSED
+[TEST] Running storage_mime_unknown... PASSED
+[TEST] Running storage_mime_no_ext... PASSED
+[TEST] Running storage_mime_case_insensitive... PASSED
+[TEST] Running storage_ensure_dirs_new... PASSED
+[TEST] Running storage_ensure_dirs_existing... PASSED
+[TEST] Running storage_save_and_read_file... PASSED
+[TEST] Running storage_save_and_read_text... PASSED
+[TEST] Running db_open_close... PASSED
+[TEST] Running db_open_existing... PASSED
+[TEST] Running db_insert_and_find... PASSED
+[TEST] Running db_find_not_found... PASSED
+[TEST] Running db_mark_ocr_done... PASSED
+[TEST] Running db_mark_parsing_done... PASSED
+[TEST] Running db_get_parsed_receipt... PASSED
+[TEST] Running db_get_parsed_receipt_not_found... PASSED
+[TEST] Running db_mark_parsing_done_update... PASSED
+[TEST] Running db_list... PASSED
+[TEST] Running db_duplicate_hash... [db] insert error: UNIQUE constraint failed: files.file_hash
+PASSED
+[TEST] Running json_valid_receipt_structure... PASSED
+[TEST] Running json_parse_line_items... PASSED
+[TEST] Running json_parse_store_info... PASSED
+[TEST] Running json_parse_other_fields... PASSED
+[TEST] Running json_create_receipt... PASSED
+[TEST] Running json_null_fields... PASSED
+[TEST] Running json_invalid_returns_null... PASSED
+[TEST] Running json_extract_value... PASSED
+[TEST] Running config_required_token... [config] required env var TELEGRAM_TOKEN is not set
+PASSED
+[TEST] Running config_required_gemini_key... [config] required env var GEMINI_API_KEY is not set
+PASSED
+[TEST] Running config_required_user_ids... [config] required env var ALLOWED_USER_IDS is not set
+PASSED
+[TEST] Running config_empty_token... [config] required env var TELEGRAM_TOKEN is not set
+PASSED
+[TEST] Running config_valid_minimal... PASSED
+[TEST] Running config_multiple_user_ids... PASSED
+[TEST] Running config_user_ids_with_spaces... PASSED
+[TEST] Running config_custom_paths... PASSED
+[TEST] Running config_is_allowed_positive... PASSED
+[TEST] Running config_is_allowed_negative... PASSED
+[TEST] Running config_invalid_user_id... [config] invalid user ID: abc
+[config] ALLOWED_USER_IDS must contain at least one valid ID
+PASSED
+[TEST] Running config_mixed_valid_invalid_user_ids... [config] invalid user ID: invalid
+[config] ALLOWED_USER_IDS must contain at least one valid ID
+PASSED
+[TEST] Running config_negative_user_id... PASSED
+[TEST] Running config_large_user_id... PASSED
+[TEST] Running config_token_truncation... PASSED
+[TEST] Running storage_sha256_binary_data... PASSED
+[TEST] Running storage_sha256_consistency... PASSED
+[TEST] Running storage_mime_all_extensions... PASSED
+[TEST] Running storage_ocr_filename_long_name... PASSED
+[TEST] Running storage_save_empty_file... PASSED
+[TEST] Running storage_save_large_file... PASSED
+[TEST] Running storage_text_empty... PASSED
+[TEST] Running storage_text_multiline... PASSED
+[TEST] Running db_empty_filename... PASSED
+[TEST] Running db_very_long_filename... PASSED
+[TEST] Running db_zero_file_size... PASSED
+[TEST] Running db_special_characters_in_filename... PASSED
+[TEST] Running db_unicode_in_filename... PASSED
+[TEST] Running db_multiple_parsed_receipts... PASSED
+[TEST] Running json_empty_object... PASSED
+[TEST] Running json_empty_array... PASSED
+[TEST] Running json_deeply_nested... PASSED
+[TEST] Running json_boolean_values... PASSED
+[TEST] Running json_number_types... PASSED
+[TEST] Running json_array_iteration... PASSED
+[TEST] Running json_special_characters_in_string... PASSED
+[TEST] Running json_receipt_validation... PASSED
+========================================
+Kaufbot Test Suite
+========================================
+
+
+========================================
+Tests run: 75
+Passed: 75
+Failed: 0
+========================================
+RESULT: SUCCESS
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"tgbot_tests" end time: Mar 23 11:22 CET
+"tgbot_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Mar 23 11:22 CET

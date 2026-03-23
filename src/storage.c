@@ -120,10 +120,33 @@ int storage_ensure_dirs(const char *base_path)
 {
     struct stat st;
     if (stat(base_path, &st) == 0) return 0;
-    if (mkdir(base_path, 0755) != 0 && errno != EEXIST) {
+
+    /* Create parent directories recursively */
+    char *path = strdup(base_path);
+    if (!path) return -1;
+
+    char *p = path;
+    if (*p == '/') p++;  /* skip leading slash */
+
+    while (*p) {
+        while (*p && *p != '/') p++;
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+                perror("[storage] mkdir");
+                free(path);
+                return -1;
+            }
+            *p = '/';
+            p++;
+        }
+    }
+    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
         perror("[storage] mkdir");
+        free(path);
         return -1;
     }
+    free(path);
     return 0;
 }
 

@@ -15,8 +15,10 @@ CMakeFiles/tgbot.dir/src/processor.c.o: \
  /usr/include/sqlite3.h \
  /usr/lib/gcc/x86_64-redhat-linux/15/include/stdarg.h \
  /home/yfozekosh/temp/kaufbot/src/storage.h \
- /home/yfozekosh/temp/kaufbot/src/gemini.h /usr/include/stdio.h \
- /usr/include/bits/types/__fpos_t.h /usr/include/bits/types/__mbstate_t.h \
+ /home/yfozekosh/temp/kaufbot/src/gemini.h \
+ /home/yfozekosh/temp/kaufbot/src/../third_party/cjson/cJSON.h \
+ /usr/include/stdio.h /usr/include/bits/types/__fpos_t.h \
+ /usr/include/bits/types/__mbstate_t.h \
  /usr/include/bits/types/__fpos64_t.h /usr/include/bits/types/__FILE.h \
  /usr/include/bits/types/FILE.h /usr/include/bits/types/struct_FILE.h \
  /usr/include/bits/types/cookie_io_functions_t.h \

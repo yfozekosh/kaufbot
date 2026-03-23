@@ -1,4 +1,6 @@
 /home/yfozekosh/temp/kaufbot/build/CMakeFiles/tgbot.dir
+/home/yfozekosh/temp/kaufbot/build/CMakeFiles/tgbot_tests.dir
+/home/yfozekosh/temp/kaufbot/build/CMakeFiles/test.dir
 /home/yfozekosh/temp/kaufbot/build/CMakeFiles/edit_cache.dir
 /home/yfozekosh/temp/kaufbot/build/CMakeFiles/rebuild_cache.dir
 /home/yfozekosh/temp/kaufbot/build/CMakeFiles/list_install_components.dir

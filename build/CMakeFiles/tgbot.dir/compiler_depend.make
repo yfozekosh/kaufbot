@@ -469,6 +469,7 @@ CMakeFiles/tgbot.dir/src/main.c.o: /home/yfozekosh/temp/kaufbot/src/main.c \
   /usr/lib/gcc/x86_64-redhat-linux/15/include/stdint.h
 
 CMakeFiles/tgbot.dir/src/processor.c.o: /home/yfozekosh/temp/kaufbot/src/processor.c \
+  /home/yfozekosh/temp/kaufbot/third_party/cjson/cJSON.h \
   /home/yfozekosh/temp/kaufbot/src/db.h \
   /home/yfozekosh/temp/kaufbot/src/gemini.h \
   /home/yfozekosh/temp/kaufbot/src/processor.h \

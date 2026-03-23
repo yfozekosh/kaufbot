@@ -49,5 +49,43 @@ target_link_libraries(tgbot PRIVATE
     SQLite::SQLite3
 )
 
+# ── Tests ─────────────────────────────────────────────────────────────────────
+option(BUILD_TESTS "Build test suite" OFF)
+
+if(BUILD_TESTS)
+    enable_testing()
+    
+    set(TEST_SOURCES
+        ${CMAKE_SOURCE_DIR}/tests/main.c
+        ${CMAKE_SOURCE_DIR}/tests/test_storage.c
+        ${CMAKE_SOURCE_DIR}/tests/test_db.c
+        ${CMAKE_SOURCE_DIR}/tests/test_json.c
+        ${CMAKE_SOURCE_DIR}/tests/test_config.c
+        ${CMAKE_SOURCE_DIR}/tests/test_edge_cases.c
+        ${CJSON_DIR}/cJSON.c
+    )
+    
+    add_executable(tgbot_tests ${TEST_SOURCES})
+    
+    target_include_directories(tgbot_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/tests
+        ${CJSON_DIR}
+    )
+    
+    target_link_libraries(tgbot_tests PRIVATE
+        SQLite::SQLite3
+    )
+    
+    # Link storage, db, config modules
+    target_sources(tgbot_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/storage.c
+        ${CMAKE_SOURCE_DIR}/src/db.c
+        ${CMAKE_SOURCE_DIR}/src/config.c
+    )
+    
+    add_test(NAME tgbot_tests COMMAND tgbot_tests)
+endif()
+
 # ── Install ───────────────────────────────────────────────────────────────────
 install(TARGETS tgbot DESTINATION bin)

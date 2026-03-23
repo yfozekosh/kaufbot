@@ -62,7 +62,16 @@ DB *db_open(const char *path)
         "  created_at         TEXT    NOT NULL,"
         "  updated_at         TEXT    NOT NULL"
         ");"
-        "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash);";
+        "CREATE TABLE IF NOT EXISTS parsed_receipts ("
+        "  id           INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  file_id      INTEGER NOT NULL UNIQUE,"
+        "  parsed_json  TEXT    NOT NULL,"
+        "  created_at   TEXT    NOT NULL,"
+        "  updated_at   TEXT    NOT NULL,"
+        "  FOREIGN KEY (file_id) REFERENCES files(id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash);"
+        "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);";
 
     if (db_exec(db->conn, schema) != 0) {
         sqlite3_close(db->conn);
@@ -232,4 +241,98 @@ int db_list(DB *db, db_list_cb cb, void *userdata)
 
     sqlite3_finalize(stmt);
     return (rc == SQLITE_DONE) ? 0 : -1;
+}
+
+/* ── mark parsing done ────────────────────────────────────────────────────── */
+
+int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
+{
+    char now[DB_DATE_LEN];
+    now_iso8601(now, sizeof(now));
+
+    /* Check if already exists */
+    const char *check_sql = "SELECT id FROM parsed_receipts WHERE file_id = ?";
+    sqlite3_stmt *check_stmt;
+    int rc = sqlite3_prepare_v2(db->conn, check_sql, -1, &check_stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "[db] prepare check_parsing: %s\n", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    sqlite3_bind_int64(check_stmt, 1, file_id);
+    rc = sqlite3_step(check_stmt);
+    int exists = (rc == SQLITE_ROW);
+    sqlite3_finalize(check_stmt);
+
+    const char *sql;
+    sqlite3_stmt *stmt;
+    if (exists) {
+        sql = "UPDATE parsed_receipts SET parsed_json=?, updated_at=? WHERE file_id=?";
+        rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "[db] prepare update_parsing: %s\n", sqlite3_errmsg(db->conn));
+            return -1;
+        }
+        sqlite3_bind_text(stmt,  1, parsed_json, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt,  2, now,         -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 3, file_id);
+    } else {
+        sql = "INSERT INTO parsed_receipts (file_id, parsed_json, created_at, updated_at)"
+              " VALUES (?, ?, ?, ?)";
+        rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "[db] prepare insert_parsing: %s\n", sqlite3_errmsg(db->conn));
+            return -1;
+        }
+        sqlite3_bind_int64(stmt, 1, file_id);
+        sqlite3_bind_text(stmt,  2, parsed_json, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt,  3, now,         -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt,  4, now,         -1, SQLITE_STATIC);
+    }
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "[db] parsing error: %s\n", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    return 0;
+}
+
+/* ── get parsed receipt ───────────────────────────────────────────────────── */
+
+int db_get_parsed_receipt(DB *db, int64_t file_id, ParsedReceipt *out)
+{
+    const char *sql =
+        "SELECT id, file_id, parsed_json, created_at, updated_at"
+        " FROM parsed_receipts WHERE file_id = ? LIMIT 1";
+
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "[db] prepare get_parsed: %s\n", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, file_id);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        return 1; /* not found */
+    }
+    if (rc != SQLITE_ROW) {
+        fprintf(stderr, "[db] step get_parsed: %s\n", sqlite3_errmsg(db->conn));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->id        = sqlite3_column_int64(stmt, 0);
+    out->file_id   = sqlite3_column_int64(stmt, 1);
+    strncpy(out->parsed_json, (const char *)sqlite3_column_text(stmt, 2), DB_JSON_LEN - 1);
+    strncpy(out->created_at,  (const char *)sqlite3_column_text(stmt, 3), DB_DATE_LEN - 1);
+    strncpy(out->updated_at,  (const char *)sqlite3_column_text(stmt, 4), DB_DATE_LEN - 1);
+
+    sqlite3_finalize(stmt);
+    return 0;
 }
