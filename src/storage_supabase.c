@@ -1,5 +1,6 @@
 #include "storage_backend.h"
 #include "config.h"
+#include "utils.h"
 #include "../third_party/cjson/cJSON.h"
 
 #include <stdio.h>
@@ -7,18 +8,20 @@
 #include <string.h>
 #include <curl/curl.h>
 
-/* Composed URLs = base_url + path_prefix + bucket + "/" + filename */
 #define MAX_COMPOSED_URL (MAX_URL_LEN + MAX_PATH_LEN + MAX_PATH_LEN + 64)
+#define SUPABASE_HTTP_TIMEOUT_SECS 120L
+#define SUPABASE_HTTP_HEAD_TIMEOUT_SECS 30L
+#define SUPABASE_HTTP_SIGN_TIMEOUT_SECS 30L
+#define SIGNED_URL_EXPIRY_SECS 3600
 
 typedef struct {
     char base_url[MAX_URL_LEN];
     char anon_key[MAX_TOKEN_LEN];
     char bucket[MAX_PATH_LEN];
-    int  is_v2_key; /* 1 if sb_secret_ / sb_publishable_ format (not JWT) */
+    int  is_v2_key;
 } SupabaseStorage;
 
-/* Build auth headers. V2 keys use only apikey; JWT keys use Authorization: Bearer. */
-static struct curl_slist *build_auth_headers(SupabaseStorage *storage)
+static struct curl_slist *build_auth_headers(const SupabaseStorage *storage)
 {
     struct curl_slist *headers = NULL;
     char hdr[MAX_TOKEN_LEN + 64];
@@ -35,76 +38,12 @@ static struct curl_slist *build_auth_headers(SupabaseStorage *storage)
     return headers;
 }
 
-/* ── grow buffer for curl ────────────────────────────────────────────────── */
-
-typedef struct {
-    char  *data;
-    size_t len;
-    size_t cap;
-} GrowBuf;
-
-static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *userdata)
-{
-    GrowBuf *buf = (GrowBuf *)userdata;
-    size_t incoming = size * nmemb;
-    size_t needed   = buf->len + incoming + 1;
-
-    if (needed > buf->cap) {
-        size_t new_cap = buf->cap ? buf->cap * 2 : 4096;
-        while (new_cap < needed) new_cap *= 2;
-        char *tmp = realloc(buf->data, new_cap);
-        if (!tmp) return 0;
-        buf->data = tmp;
-        buf->cap  = new_cap;
-    }
-    memcpy(buf->data + buf->len, ptr, incoming);
-    buf->len += incoming;
-    buf->data[buf->len] = '\0';
-    return incoming;
-}
-
-static void growbuf_free(GrowBuf *buf)
-{
-    free(buf->data);
-    buf->data = NULL;
-    buf->len  = 0;
-    buf->cap  = 0;
-}
-
-/* ── base64 encoder ───────────────────────────────────────────────────────── */
-
-static const char B64_CHARS[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-__attribute__((unused)) static char *base64_encode(const uint8_t *src, size_t len)
-{
-    size_t out_len = ((len + 2) / 3) * 4 + 1;
-    char *out = malloc(out_len);
-    if (!out) return NULL;
-
-    size_t i, j;
-    for (i = 0, j = 0; i < len;) {
-        uint32_t a = i < len ? src[i++] : 0;
-        uint32_t b = i < len ? src[i++] : 0;
-        uint32_t c = i < len ? src[i++] : 0;
-        uint32_t triple = (a << 16) | (b << 8) | c;
-        out[j++] = B64_CHARS[(triple >> 18) & 0x3F];
-        out[j++] = B64_CHARS[(triple >> 12) & 0x3F];
-        out[j++] = B64_CHARS[(triple >>  6) & 0x3F];
-        out[j++] = B64_CHARS[ triple        & 0x3F];
-    }
-    if (len % 3 == 1) { out[j-1] = '='; out[j-2] = '='; }
-    if (len % 3 == 2) { out[j-1] = '='; }
-    out[j] = '\0';
-    return out;
-}
-
 /* ── Supabase storage implementation ──────────────────────────────────────── */
 
 static StorageBackend *supabase_open(const Config *cfg)
 {
     LOG_INFO("opening Supabase storage: %s/%s", cfg->supabase_url, cfg->supabase_bucket);
-    
+
     SupabaseStorage *storage = calloc(1, sizeof(SupabaseStorage));
     if (!storage) {
         LOG_ERROR("failed to allocate storage");
@@ -120,6 +59,7 @@ static StorageBackend *supabase_open(const Config *cfg)
         free(storage);
         return NULL;
     }
+    backend->ops = NULL;
     backend->internal = storage;
     return backend;
 }
@@ -135,7 +75,6 @@ static void supabase_close(StorageBackend *backend)
 static int supabase_ensure_dirs(StorageBackend *backend)
 {
     (void)backend;
-    /* Supabase buckets are managed externally */
     LOG_DEBUG("Supabase storage doesn't require directory creation");
     return 0;
 }
@@ -154,21 +93,19 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
         return -1;
     }
 
-    /* Build headers */
     struct curl_slist *headers = build_auth_headers(storage);
     headers = curl_slist_append(headers, "Content-Type: application/octet-stream");
     headers = curl_slist_append(headers, "x-upsert: true");
 
-    /* Use multipart upload for large files, simple PUT for small */
     GrowBuf resp = {0};
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t)len);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
@@ -184,7 +121,7 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     }
 
     if (http_code != 200 && http_code != 201) {
-        LOG_ERROR("upload HTTP error: %ld - %.400s", http_code, resp.data ? resp.data : "(empty)");
+        LOG_ERROR("upload HTTP error: %ld", http_code);
         growbuf_free(&resp);
         return -1;
     }
@@ -215,7 +152,7 @@ static int supabase_file_exists(StorageBackend *backend, const char *filename)
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_HEAD_TIMEOUT_SECS);
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
@@ -235,13 +172,11 @@ static int supabase_file_exists(StorageBackend *backend, const char *filename)
 static char *supabase_get_public_url(StorageBackend *backend, const char *filename)
 {
     SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
-    
-    /* Try to get public URL first */
+
     char url[MAX_COMPOSED_URL];
-    snprintf(url, sizeof(url), "%s/storage/v1/object/public/%s/%s", 
+    snprintf(url, sizeof(url), "%s/storage/v1/object/public/%s/%s",
              storage->base_url, storage->bucket, filename);
-    
-    /* Check if bucket is public by making a HEAD request */
+
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
 
@@ -250,7 +185,7 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_HEAD_TIMEOUT_SECS);
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
@@ -260,7 +195,6 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     curl_easy_cleanup(curl);
 
     if (res == CURLE_OK && http_code == 200) {
-        /* Public bucket - return public URL */
         char *public_url = malloc(MAX_COMPOSED_URL);
         if (public_url) {
             snprintf(public_url, MAX_COMPOSED_URL, "%s/storage/v1/object/public/%s/%s",
@@ -269,10 +203,9 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
         return public_url;
     }
 
-    /* Private bucket - return signed URL */
+    /* Private bucket - generate signed URL */
     LOG_DEBUG("bucket is private, generating signed URL for: %s", filename);
-    
-    /* Create signed URL via Supabase API */
+
     char sign_url[MAX_COMPOSED_URL];
     snprintf(sign_url, sizeof(sign_url), "%s/storage/v1/object/sign/%s/%s",
              storage->base_url, storage->bucket, filename);
@@ -280,11 +213,14 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     curl = curl_easy_init();
     if (!curl) return NULL;
 
-    /* Request body with expiresIn */
     cJSON *body = cJSON_CreateObject();
-    cJSON_AddNumberToObject(body, "expiresIn", 3600); /* 1 hour */
+    cJSON_AddNumberToObject(body, "expiresIn", SIGNED_URL_EXPIRY_SECS);
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
+    if (!body_str) {
+        curl_easy_cleanup(curl);
+        return NULL;
+    }
 
     GrowBuf resp = {0};
     headers = build_auth_headers(storage);
@@ -293,9 +229,9 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     curl_easy_setopt(curl, CURLOPT_URL, sign_url);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_SIGN_TIMEOUT_SECS);
 
     res = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
@@ -310,10 +246,9 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
         return NULL;
     }
 
-    /* Parse response: {"signedURL":"/object/sign/..."} */
     cJSON *json = cJSON_Parse(resp.data);
     growbuf_free(&resp);
-    
+
     if (!json) {
         LOG_ERROR("failed to parse signed URL response");
         return NULL;
@@ -322,7 +257,6 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     cJSON *signed_url = cJSON_GetObjectItem(json, "signedURL");
     char *result = NULL;
     if (cJSON_IsString(signed_url)) {
-        /* Build full URL */
         result = malloc(MAX_COMPOSED_URL);
         if (result) {
             snprintf(result, MAX_COMPOSED_URL, "%s/storage/v1%s", storage->base_url, signed_url->valuestring);

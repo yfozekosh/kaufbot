@@ -1,0 +1,34 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Attach
+IndentCaseLabels: false
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+AlignConsecutiveMacros: Consecutive
+AlignTrailingComments: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+BraceWrapping:
+  AfterFunction: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterUnion: false
+  AfterControlStatement: false
+  AfterExternBlock: false
+  BeforeElse: false
+  IndentBraces: false
+SpaceInEmptyBlock: false
+CompactNamespaces: false
+...

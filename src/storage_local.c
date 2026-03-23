@@ -301,20 +301,8 @@ StorageBackend *storage_backend_local_open(const Config *cfg)
 
 /* ── Backward compatibility wrappers for tests ───────────────────────────── */
 
-static LocalStorage g_test_storage;
-static int g_test_storage_init = 0;
-
-static void ensure_test_storage(const char *path)
-{
-    if (!g_test_storage_init) {
-        snprintf(g_test_storage.base_path, sizeof(g_test_storage.base_path), "%s", path);
-        g_test_storage_init = 1;
-    }
-}
-
 int storage_ensure_dirs(const char *base_path)
 {
-    ensure_test_storage(base_path);
     struct stat st;
     if (stat(base_path, &st) == 0) return 0;
 
@@ -347,7 +335,6 @@ int storage_ensure_dirs(const char *base_path)
 int storage_save_file(const char *base_path, const char *filename,
                       const uint8_t *data, size_t len)
 {
-    ensure_test_storage(base_path);
     char full_path[MAX_PATH_LEN * 2];
     snprintf(full_path, sizeof(full_path), "%s/%s", base_path, filename);
 

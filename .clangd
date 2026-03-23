@@ -1,0 +1,22 @@
+CompileFlags:
+  Add:
+    - -Wall
+    - -Wextra
+    - -Wpedantic
+    - -std=c11
+    - -Ithird_party/cjson
+
+Diagnostics:
+  UnusedIncludes: Strict
+  Suppress:
+    - misc-unused-parameters
+
+---
+If:
+  PathExclude: third_party/**
+
+CompileFlags:
+  Remove:
+    - -Wall
+    - -Wextra
+    - -Wpedantic

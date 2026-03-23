@@ -3,18 +3,19 @@ project(tgbot C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ── Compiler flags ────────────────────────────────────────────────────────────
 add_compile_options(
     -Wall -Wextra -Wpedantic -Werror
     -O2
     -fstack-protector-strong
-    # Reduce binary size on embedded targets
     -ffunction-sections -fdata-sections
+    -D_GNU_SOURCE
 )
 add_link_options(-Wl,--gc-sections)
 
-# ── Dependencies (must be before Sources so PostgreSQL_FOUND is available) ─────
+# ── Dependencies ─────────────────────────────────────────────────────────────
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PostgreSQL)
@@ -31,12 +32,12 @@ set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/gemini.c
     ${CMAKE_SOURCE_DIR}/src/processor.c
     ${CMAKE_SOURCE_DIR}/src/bot.c
+    ${CMAKE_SOURCE_DIR}/src/utils.c
     ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
     ${CMAKE_SOURCE_DIR}/src/storage_local.c
     ${CJSON_DIR}/cJSON.c
 )
 
-# Add PostgreSQL sources if available
 if(PostgreSQL_FOUND)
     list(APPEND SOURCES
         ${CMAKE_SOURCE_DIR}/src/db_postgres.c
@@ -50,8 +51,6 @@ target_include_directories(tgbot PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CJSON_DIR}
 )
-
-# ── Linker ────────────────────────────────────────────────────────────────────
 
 target_link_libraries(tgbot PRIVATE
     CURL::libcurl
@@ -92,6 +91,7 @@ if(BUILD_TESTS)
 
     target_link_libraries(tgbot_tests PRIVATE
         SQLite::SQLite3
+        CURL::libcurl
     )
 
     target_sources(tgbot_tests PRIVATE
@@ -99,13 +99,96 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/config.c
         ${CMAKE_SOURCE_DIR}/src/gemini.c
-    )
-
-    target_link_libraries(tgbot_tests PRIVATE
-        CURL::libcurl
+        ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test(NAME tgbot_tests COMMAND tgbot_tests)
+endif()
+
+# ── Lint ──────────────────────────────────────────────────────────────────────
+find_program(CLANG_TIDY_EXE clang-tidy)
+if(CLANG_TIDY_EXE)
+    add_custom_target(lint
+        COMMAND ${CLANG_TIDY_EXE}
+            -p ${CMAKE_BINARY_DIR}
+            ${SOURCES}
+        COMMENT "Running clang-tidy on source files"
+        VERBATIM
+    )
+    message(STATUS "clang-tidy found - 'make lint' target available")
+else()
+    message(STATUS "clang-tidy not found - 'make lint' target not available")
+endif()
+
+find_program(CPPCHECK_EXE cppcheck)
+if(CPPCHECK_EXE)
+    add_custom_target(cppcheck
+        COMMAND ${CPPCHECK_EXE}
+            --enable=warning,performance,portability
+            --error-exitcode=1
+            --suppress=missingIncludeSystem
+            -I ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/
+        COMMENT "Running cppcheck on source files"
+        VERBATIM
+    )
+    message(STATUS "cppcheck found - 'make cppcheck' target available")
+endif()
+
+# ── Format ────────────────────────────────────────────────────────────────────
+find_program(CLANG_FORMAT_EXE clang-format)
+if(CLANG_FORMAT_EXE)
+    set(ALL_C_FILES
+        ${SOURCES}
+        ${TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/src/utils.h
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+        ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
+        ${CMAKE_SOURCE_DIR}/src/processor.h
+        ${CMAKE_SOURCE_DIR}/src/bot.h
+        ${CMAKE_SOURCE_DIR}/src/gemini.h
+        ${CMAKE_SOURCE_DIR}/src/config.h
+        ${CMAKE_SOURCE_DIR}/src/db.h
+        ${CMAKE_SOURCE_DIR}/src/db_backend.h
+        ${CMAKE_SOURCE_DIR}/src/storage.h
+        ${CMAKE_SOURCE_DIR}/src/storage_backend.h
+    )
+
+    add_custom_target(format
+        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_C_FILES}
+        COMMENT "Formatting all source files with clang-format"
+        VERBATIM
+    )
+
+    add_custom_target(format-check
+        COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror ${ALL_C_FILES}
+        COMMENT "Checking formatting with clang-format"
+        VERBATIM
+    )
+
+    message(STATUS "clang-format found - 'make format' and 'make format-check' targets available")
+endif()
+
+# ── Test Coverage ─────────────────────────────────────────────────────────────
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+
+if(ENABLE_COVERAGE AND BUILD_TESTS)
+    target_compile_options(tgbot_tests PRIVATE --coverage -O0 -g)
+    target_link_options(tgbot_tests PRIVATE --coverage)
+
+    find_program(LCOV_EXE lcov)
+    find_program(GENHTML_EXE genhtml)
+
+    if(LCOV_EXE AND GENHTML_EXE)
+        add_custom_target(coverage
+            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --no-external
+            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info
+            COMMAND ${GENHTML_EXE} coverage_filtered.info --output-directory coverage_report
+            COMMENT "Generating code coverage report"
+            VERBATIM
+        )
+        message(STATUS "lcov/genhtml found - 'make coverage' target available")
+    endif()
 endif()
 
 # ── Install ───────────────────────────────────────────────────────────────────

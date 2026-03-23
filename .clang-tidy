@@ -1,0 +1,33 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  concurrency-*,
+  memory-*,
+  -memory-no-malloc,
+  performance-*,
+  readability-*,
+  -readability-avoid-const-params-in-decls,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  portability-*,
+  misc-*,
+  -misc-include-cleaner
+
+WarningsAsErrors: 'bugprone-*,performance-*'
+
+HeaderFilterRegex: 'src/.*'
+
+CheckOptions:
+  - key: bugprone-assert-side-effect.WarnOnAssertMacros
+    value: 'true'
+  - key: readability-function-size.LineThreshold
+    value: '80'
+  - key: readability-function-size.StatementThreshold
+    value: '60'

@@ -7,6 +7,9 @@
 #include <time.h>
 #include <libpq-fe.h>
 
+/* Forward declaration */
+static const DBBackendOps postgres_ops;
+
 typedef struct {
     PGconn *conn;
 } PostgresDB;
@@ -32,16 +35,6 @@ static int db_exec(PGconn *conn, const char *sql)
     LOG_DEBUG("SQL executed: %s", sql);
     PQclear(res);
     return 0;
-}
-
-__attribute__((unused)) static char *escape_literal(PGconn *conn, const char *str)
-{
-    char *escaped = PQescapeLiteral(conn, str, strlen(str));
-    if (!escaped) {
-        LOG_ERROR("escape error: %s", PQerrorMessage(conn));
-        return NULL;
-    }
-    return escaped;
 }
 
 /* ── open / migrate ───────────────────────────────────────────────────────── */
@@ -109,6 +102,7 @@ static DBBackend *postgres_open(const Config *cfg)
         free(db);
         return NULL;
     }
+    backend->ops = &postgres_ops;
     backend->internal = db;
     LOG_INFO("PostgreSQL database opened successfully");
     return backend;
@@ -380,9 +374,5 @@ static const DBBackendOps postgres_ops = {
 
 DBBackend *db_backend_postgres_open(const Config *cfg)
 {
-    DBBackend *backend = postgres_ops.open(cfg);
-    if (backend) {
-        backend->ops = &postgres_ops;
-    }
-    return backend;
+    return postgres_ops.open(cfg);
 }

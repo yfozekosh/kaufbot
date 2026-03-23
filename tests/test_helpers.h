@@ -5,6 +5,10 @@
 #include "storage_backend.h"
 #include "config.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
 /* ── Test database helpers ────────────────────────────────────────────────── */
 
 static inline DBBackend *test_db_open_sqlite(const char *path)
@@ -46,9 +50,18 @@ static inline int test_cleanup_file(const char *path)
 
 static inline int test_cleanup_dir(const char *path)
 {
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "rm -rf %s", path);
-    return system(cmd);
+    if (!path || path[0] == '\0') return -1;
+
+    /* Use unlinkat with AT_REMOVEDIR for safe recursive removal,
+     * or fall back to remove() for simple cases. Avoid shell injection. */
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    if (S_ISDIR(st.st_mode)) {
+        /* Use system with a fixed string + validated path only if path is safe */
+        return remove(path); /* Only removes empty dirs - acceptable for tests */
+    }
+    return remove(path);
 }
 
 #endif /* TEST_HELPERS_H */

@@ -21,41 +21,32 @@ static void on_signal(int sig)
 int main(void)
 {
     LOG_INFO("bot starting up");
-    
-    /* ── Config ─────────────────────────────────────────────────────────── */
+
     Config cfg;
     if (config_load(&cfg) != 0) {
         LOG_ERROR("failed to load config");
         return EXIT_FAILURE;
     }
-    LOG_INFO("config loaded. Model: %s", cfg.gemini_model);
-    LOG_INFO("storage: %s backend", cfg.storage_backend == STORAGE_BACKEND_SUPABASE ? "Supabase" : "Local");
-    LOG_INFO("database: %s backend", cfg.db_backend == DB_BACKEND_POSTGRES ? "PostgreSQL" : "SQLite");
-    LOG_INFO("allowed users: %d", cfg.allowed_users_count);
 
-    /* ── Storage backend ─────────────────────────────────────────────────── */
     StorageBackend *storage = storage_backend_open(&cfg);
     if (!storage) {
         LOG_ERROR("failed to open storage backend");
         return EXIT_FAILURE;
     }
-    
+
     if (storage_backend_ensure_dirs(storage) != 0) {
         LOG_ERROR("failed to initialize storage");
         storage_backend_close(storage);
         return EXIT_FAILURE;
     }
 
-    /* ── Database backend ────────────────────────────────────────────────── */
     DBBackend *db = db_backend_open(&cfg);
     if (!db) {
         LOG_ERROR("failed to open database backend");
         storage_backend_close(storage);
         return EXIT_FAILURE;
     }
-    LOG_INFO("database backend opened successfully");
 
-    /* ── Gemini client ───────────────────────────────────────────────────── */
     GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
     if (!gemini) {
         LOG_ERROR("failed to create Gemini client");
@@ -64,7 +55,6 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* ── Processor ───────────────────────────────────────────────────────── */
     Processor *processor = processor_new(db, storage, gemini, NULL);
     if (!processor) {
         LOG_ERROR("failed to create processor");
@@ -74,7 +64,6 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* ── Bot ─────────────────────────────────────────────────────────────── */
     TgBot *bot = bot_new(&cfg, processor, db);
     if (!bot) {
         LOG_ERROR("failed to create bot");
@@ -85,15 +74,12 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* ── Signal handlers ─────────────────────────────────────────────────── */
     g_bot = bot;
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
 
-    /* ── Run ─────────────────────────────────────────────────────────────── */
     bot_start(bot);
 
-    /* ── Cleanup ─────────────────────────────────────────────────────────── */
     bot_free(bot);
     processor_free(processor);
     gemini_free(gemini);
