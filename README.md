@@ -35,23 +35,13 @@ Telegram bot that processes receipt photos — extracts text via OCR, parses lin
 
 ## Quick Start
 
-### 1. Prerequisites
+### 1. Install dependencies
 
-- C compiler (GCC/Clang)
-- CMake 3.16+
-- libcurl
-- SQLite3
-- PostgreSQL client library (optional, for Supabase/PostgreSQL)
-
-**Fedora:**
 ```bash
 sudo dnf install cmake gcc libcurl-devel sqlite-devel postgresql-devel
 ```
 
-**Debian/Ubuntu:**
-```bash
-sudo apt install cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev
-```
+Using a different distro? I'm sorry to hear that. You're on your own, and frankly, not welcome here. But if you insist, try `apt install cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev` or whatever your package manager calls things this week. Don't @ me.
 
 ### 2. Configure
 
@@ -86,25 +76,30 @@ Optional (database):
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | — | Database name |
 | `POSTGRES_USER` | — | Database user |
-| `POSTGRES_PASSWORD` | — | Database password |
+| `POSTGRES_PASSWORD` | — | PostgreSQL password |
 
 ### 3. Build & Run
 
 ```bash
-./build.sh          # configure + compile
-source .env && ./build/tgbot   # run
-```
-
-Or use the convenience script:
-```bash
-./run.sh
+./build.sh
+source .env && ./build/tgbot
 ```
 
 ### 4. Test
 
 ```bash
-./test.sh           # run test suite
+./test.sh
 ```
+
+5 test modules, 85 test cases:
+
+| Module | Tests | What |
+|--------|-------|------|
+| `test_storage` | 19 | SHA-256, filenames, MIME types, file I/O |
+| `test_db` | 10 | SQLite CRUD, OCR/parsing state |
+| `test_json` | 19 | JSON parsing, Gemini response handling |
+| `test_config` | 15 | Config loading, validation, edge cases |
+| `test_edge_cases` | 22 | Boundary values, unicode, special chars |
 
 ### 5. Docker
 
@@ -127,7 +122,52 @@ Commands:
 - `/start` — welcome message
 - `/list` — show recent receipts
 
-## Project Structure
+## Development
+
+### Dev tools
+
+Install lint/format/analysis tools:
+
+```bash
+# System-wide (Fedora, requires sudo)
+sudo dnf install clang-tools-extra cppcheck lcov
+
+# Or locally into .tools/ (no sudo, no system pollution)
+./tools/install.sh --local
+source .tools/env.sh
+```
+
+### Build targets
+
+```bash
+cmake -DBUILD_TESTS=ON -S . -B build
+cmake --build build
+
+# Tests
+cmake --build build && cd build && ctest --output-on-failure
+
+# Lint & format
+cmake --build build --target lint
+cmake --build build --target cppcheck
+cmake --build build --target format-check
+
+# Coverage
+cmake -DBUILD_TESTS=ON -DENABLE_COVERAGE=ON -S . -B build
+cmake --build build --target test-coverage    # run tests + generate report
+cmake --build build --target coverage-check   # + enforce 70% threshold
+```
+
+### IDE (clangd)
+
+`compile_commands.json` is generated automatically. Symlink it to the project root:
+
+```bash
+ln -sf build/compile_commands.json .
+```
+
+Your editor's clangd extension will pick it up. The `.clangd` config handles cJSON include paths.
+
+### Project structure
 
 ```
 ├── src/
@@ -136,6 +176,7 @@ Commands:
 │   ├── processor.c / .h    # orchestration (hash, save, OCR, parse)
 │   ├── gemini.c / .h       # Gemini API client (OCR + parsing)
 │   ├── config.c / .h       # environment variable loading
+│   ├── utils.c / utils.h   # shared utilities (GrowBuf, base64, URL encoding)
 │   ├── db_backend.h        # database backend interface
 │   ├── db.h                # data types (FileRecord, ParsedReceipt)
 │   ├── db_sqlite.c         # SQLite implementation
@@ -145,52 +186,66 @@ Commands:
 │   ├── storage_local.c     # local filesystem implementation
 │   └── storage_supabase.c  # Supabase Storage implementation
 ├── tests/
+│   ├── main.c              # test runner (per-module binaries)
+│   ├── test_runner.h       # minimal test framework macros
+│   ├── test_helpers.h      # shared test helpers
 │   ├── test_db.c           # database tests
 │   ├── test_json.c         # JSON parsing + Gemini mock tests
 │   ├── test_storage.c      # storage utility tests
 │   ├── test_config.c       # config loading tests
-│   ├── test_edge_cases.c   # boundary/edge case tests
-│   └── test_runner.h       # minimal test framework
+│   └── test_edge_cases.c   # boundary/edge case tests
+├── tools/
+│   └── install.sh          # local tool installer
 ├── third_party/cjson/      # cJSON library (vendored)
 ├── migrations/             # database schema files
+├── .clang-format           # code formatter config
+├── .clang-tidy             # static analysis config
+├── .clangd                 # IDE config
+├── .github/workflows/ci.yml  # CI pipeline
 ├── build.sh                # build script
+├── ci.sh                   # local CI (all checks)
 ├── test.sh                 # test script
 ├── run.sh                  # run script
 ├── CMakeLists.txt          # build configuration
 ├── Dockerfile              # multi-stage Docker build
-├── .env.example            # configuration template
 ├── RULES.md                # coding conventions
 ├── CODE_SMELLS.md          # code quality audit
 └── NEXT_STEPS.md           # improvement roadmap
 ```
 
-## Development
-
-### Build Options
-
-```bash
-# Debug build with tests
-cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -S . -B build
-cmake --build build
-
-# Run tests
-cd build && ctest --output-on-failure
-```
-
-### Adding a New Backend
+### Adding a new backend
 
 1. Implement the interface (`StorageBackendOps` or `DBBackendOps`)
 2. Add the `_open` factory function
 3. Register in the `*_open` factory in `storage_backend.h` or `db_backend.h`
 
-### Coding Conventions
+### Coding conventions
 
 See [RULES.md](RULES.md). Key points:
 - Write tests alongside new code
 - Never suppress compiler warnings
-- Treat all `-Wall -Wextra -Wpedantic` warnings as errors
 - 70% minimum code coverage target
 
 ## License
 
-Private project.
+MIT License
+
+Copyright (c) 2026 Kaufbot Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

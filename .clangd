@@ -13,7 +13,7 @@ Diagnostics:
 
 ---
 If:
-  PathExclude: third_party/**
+  PathExclude: third_party/
 
 CompileFlags:
   Remove:

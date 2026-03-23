@@ -7,7 +7,7 @@
 - [x] Enable checks: bugprone-*, concurrency-*, memory-*, performance-*, readability-*
 - [x] Add `cppcheck` as a secondary analyzer
 - [x] Fix all existing warnings from `-Wall -Wextra -Wpedantic -Werror`
-- [ ] Run static analysis in CI (GitHub Actions / local script)
+- [x] Run static analysis in CI (GitHub Actions / local script)
 
 ## 2. Code Formatter
 
@@ -22,17 +22,17 @@
 - [x] Add symlink `build/compile_commands.json -> project root`
 - [x] Add `.clangd` config for include path resolution and warnings
 - [x] Verify clangd works with third_party headers (cJSON)
-- [ ] Verify clangd works across all build configurations (with/without PostgreSQL)
-- [ ] Add clangd setup instructions to README
+- [x] Verify clangd works across all build configurations (with/without PostgreSQL)
+- [x] Add clangd setup instructions to README
 
 ## 4. Test Framework
 
 - [x] Tests use `db_backend_*` and `storage_backend_*` interfaces consistently
 - [x] Legacy API wrappers removed from db_sqlite.c
-- [ ] Evaluate/test frameworks: Unity, cmocka, Check
-- [ ] Add CMake target `make test-coverage`
-- [ ] Generate coverage report with `lcov` / `genhtml`
-- [ ] Set minimum coverage threshold
+- [x] Evaluate/test frameworks: Unity, cmocka, Check
+- [x] Add CMake target `make test-coverage`
+- [x] Generate coverage report with `lcov` / `genhtml`
+- [x] Set minimum coverage threshold
 
 ## 5. Code Quality
 
@@ -80,5 +80,19 @@
 
 - [x] CMake targets: `build`, `test`, `lint`, `format`, `format-check`
 - [x] Coverage support with `ENABLE_COVERAGE` option
-- [ ] Add GitHub Actions workflow
-- [ ] Gate merges on: build, test, lint, format-check passing
+- [x] Add GitHub Actions workflow
+- [x] Gate merges on: build, test, lint, format-check passing
+
+---
+
+## Appendix: Test Framework Evaluation
+
+The project uses a custom minimal test framework (`tests/test_runner.h`). Evaluated alternatives:
+
+| Framework | Pros | Cons | Verdict |
+|-----------|------|------|---------|
+| **Unity** | Single-file, zero dependencies, portable C99/C11, good assertion macros | No built-in mocking, simple runner | **Recommended** if we want to migrate. Drop-in replacement for our custom macros with better error messages and XML output for CI. |
+| **cmocka** | Built-in mocking (`expect_value`, `will_return`), widely used | Requires linking external library, more setup per test | Good fit if we need mock-based testing for HTTP/DB isolation. |
+| **Check** | Fork-based isolation (crash-safe), TAP output | Heavy (requires POSIX), slow due to fork(), complex setup | Overkill for this project size. |
+
+**Decision**: Keep the current custom framework. It is lightweight, has no external dependencies, and matches the project's simplicity. If mock-based testing becomes necessary (e.g., isolating HTTP calls in bot.c/gemini.c), migrate to **cmocka**. If better CI reporting is needed, migrate to **Unity**.

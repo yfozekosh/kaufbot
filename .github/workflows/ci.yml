@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres: [with-postgres, without-postgres]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (without PostgreSQL)
+        if: matrix.postgres == 'without-postgres'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libcurl4-openssl-dev libsqlite3-dev
+
+      - name: Install dependencies (with PostgreSQL)
+        if: matrix.postgres == 'with-postgres'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev
+
+      - name: Configure
+        run: cmake -DBUILD_TESTS=ON -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libcurl4-openssl-dev libsqlite3-dev clang-tidy cppcheck
+
+      - name: Configure
+        run: cmake -DBUILD_TESTS=ON -S . -B build
+
+      - name: clang-tidy
+        run: cmake --build build --target lint
+
+      - name: cppcheck
+        run: cmake --build build --target cppcheck
+
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang-format
+
+      - name: Configure
+        run: cmake -S . -B build
+
+      - name: Check formatting
+        run: cmake --build build --target format-check
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libcurl4-openssl-dev libsqlite3-dev lcov
+
+      - name: Configure with coverage
+        run: cmake -DBUILD_TESTS=ON -DENABLE_COVERAGE=ON -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+      - name: Generate coverage report
+        run: cmake --build build --target coverage
+
+      - name: Check coverage threshold
+        run: |
+          # Extract line coverage percentage from lcov summary
+          COVERAGE=$(lcov --summary build/coverage_filtered.info 2>&1 | grep 'lines' | sed 's/.*: \([0-9.]*\)%.*/\1/')
+          echo "Line coverage: ${COVERAGE}%"
+          # Fail if below 70%
+          if [ "$(echo "$COVERAGE < 70" | bc -l)" -eq 1 ]; then
+            echo "::error::Line coverage ${COVERAGE}% is below the 70% minimum threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage_report/
