@@ -1,6 +1,7 @@
 /* ── Storage module tests ─────────────────────────────────────────────────── */
 
 #include "test_runner.h"
+#include "test_helpers.h"
 #include "storage.h"
 #include <string.h>
 #include <sys/stat.h>

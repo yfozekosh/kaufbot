@@ -8,6 +8,9 @@
 #include <time.h>
 #include <errno.h>
 
+/* Forward declaration */
+static const StorageBackendOps local_ops;
+
 typedef struct {
     char base_path[MAX_PATH_LEN];
 } LocalStorage;
@@ -138,6 +141,7 @@ static StorageBackend *local_open(const Config *cfg)
         free(storage);
         return NULL;
     }
+    backend->ops = &local_ops;
     backend->internal = storage;
     return backend;
 }

@@ -7,6 +7,9 @@
 #include <time.h>
 #include <sqlite3.h>
 
+/* Forward declaration */
+static const DBBackendOps sqlite_ops;
+
 typedef struct {
     sqlite3 *conn;
 } SQLiteDB;
@@ -95,6 +98,7 @@ static DBBackend *sqlite_open(const Config *cfg)
         free(db);
         return NULL;
     }
+    backend->ops = &sqlite_ops;
     backend->internal = db;
     LOG_INFO("SQLite database opened successfully");
     return backend;
