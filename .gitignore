@@ -29,6 +29,7 @@ compile_commands.json
 .env.local
 .env.*.local
 *.key
+.env.example
 
 # Runtime data
 data/*.db
@@ -56,3 +57,6 @@ third_party/*/dist/
 *.gcno
 *.gcda
 coverage/
+
+# Migrations (local copies)
+migrations/*.local.sql

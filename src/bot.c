@@ -18,7 +18,7 @@
 struct TgBot {
     const Config   *cfg;
     Processor      *processor;
-    DB             *db;
+    DBBackend      *db;
     atomic_int      running;
     long            offset;   /* next update_id to request */
 };
@@ -267,7 +267,7 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text)
         pos += snprintf(reply + pos, sizeof(reply) - pos, "📁 Recent uploads:\n\n");
 
         ListCtx ctx = { reply, pos, (int)sizeof(reply), 0 };
-        db_list(bot->db, list_cb, &ctx);
+        db_backend_list(bot->db, list_cb, &ctx);
         
         tg_send_message(bot, chat_id, reply);
         return;
@@ -403,7 +403,7 @@ static void dispatch_update(TgBot *bot, cJSON *update)
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-TgBot *bot_new(const Config *cfg, Processor *processor, DB *db)
+TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db)
 {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 

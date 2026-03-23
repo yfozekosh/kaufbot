@@ -3,13 +3,13 @@
 
 #include "config.h"
 #include "processor.h"
-#include "db.h"
+#include "db_backend.h"
 
 typedef struct TgBot TgBot;
 
 /* Create the bot. Borrowed pointers – bot does not free them.
  * Returns NULL on error. */
-TgBot *bot_new(const Config *cfg, Processor *processor, DB *db);
+TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db);
 
 /* Free the bot. */
 void bot_free(TgBot *bot);

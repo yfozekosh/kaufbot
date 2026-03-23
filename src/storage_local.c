@@ -1,4 +1,4 @@
-#include "storage.h"
+#include "storage_backend.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -8,7 +8,11 @@
 #include <time.h>
 #include <errno.h>
 
-/* ── SHA-256 (portable, no external dep) ─────────────────────────────────── */
+typedef struct {
+    char base_path[MAX_PATH_LEN];
+} LocalStorage;
+
+/* ── SHA-256 ──────────────────────────────────────────────────────────────── */
 
 typedef struct {
     uint32_t state[8];
@@ -97,7 +101,7 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t *digest)
     uint8_t bc[8];
     for (int i=7;i>=0;i--) { bc[i]=(uint8_t)(bit_count&0xff); bit_count>>=8; }
     sha256_update(ctx, bc, 8);
-    for (int i=0;i<4;i++)
+    for (int i=0;i<32;i++)
         for (int j=0;j<8;j++)
             digest[i+j*4]=(ctx->state[j]>>(24-i*8))&0xff;
 }
@@ -116,10 +120,41 @@ void storage_sha256_hex(const uint8_t *data, size_t len, char *out)
     LOG_DEBUG("SHA256: %s", out);
 }
 
-/* ── directory helpers ────────────────────────────────────────────────────── */
+/* ── local storage implementation ────────────────────────────────────────── */
 
-int storage_ensure_dirs(const char *base_path)
+static StorageBackend *local_open(const Config *cfg)
 {
+    LOG_INFO("opening local storage: %s", cfg->storage_path);
+    
+    LocalStorage *storage = calloc(1, sizeof(LocalStorage));
+    if (!storage) {
+        LOG_ERROR("failed to allocate storage");
+        return NULL;
+    }
+    snprintf(storage->base_path, sizeof(storage->base_path), "%s", cfg->storage_path);
+
+    StorageBackend *backend = calloc(1, sizeof(StorageBackend));
+    if (!backend) {
+        free(storage);
+        return NULL;
+    }
+    backend->internal = storage;
+    return backend;
+}
+
+static void local_close(StorageBackend *backend)
+{
+    if (!backend) return;
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    free(storage);
+    free(backend);
+}
+
+static int local_ensure_dirs(StorageBackend *backend)
+{
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    const char *base_path = storage->base_path;
+    
     struct stat st;
     if (stat(base_path, &st) == 0) {
         LOG_DEBUG("storage directory already exists: %s", base_path);
@@ -134,7 +169,7 @@ int storage_ensure_dirs(const char *base_path)
     }
 
     char *p = path;
-    if (*p == '/') p++;  /* skip leading slash */
+    if (*p == '/') p++;
 
     while (*p) {
         while (*p && *p != '/') p++;
@@ -161,33 +196,11 @@ int storage_ensure_dirs(const char *base_path)
     return 0;
 }
 
-/* ── filename generation ─────────────────────────────────────────────────── */
-
-void storage_gen_filename(const char *ext, char *out, size_t out_len)
+static int local_save_file(StorageBackend *backend, const char *filename, const uint8_t *data, size_t len)
 {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    snprintf(out, out_len, "upload_%04d-%02d-%02d_%02d_%02d_%02d%s",
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
-             t->tm_hour, t->tm_min, t->tm_sec,
-             ext ? ext : "");
-}
-
-void storage_ocr_filename(const char *saved_name, char *out, size_t out_len)
-{
-    /* Strip extension, append _ocr_result.txt */
-    const char *dot = strrchr(saved_name, '.');
-    size_t base_len = dot ? (size_t)(dot - saved_name) : strlen(saved_name);
-    snprintf(out, out_len, "%.*s_ocr_result.txt", (int)base_len, saved_name);
-}
-
-/* ── file I/O ─────────────────────────────────────────────────────────────── */
-
-int storage_save_file(const char *base_path, const char *filename,
-                      const uint8_t *data, size_t len)
-{
+    LocalStorage *storage = (LocalStorage *)backend->internal;
     char full_path[MAX_PATH_LEN * 2];
-    snprintf(full_path, sizeof(full_path), "%s/%s", base_path, filename);
+    snprintf(full_path, sizeof(full_path), "%s/%s", storage->base_path, filename);
 
     LOG_DEBUG("saving file: %s (%zu bytes)", filename, len);
     FILE *f = fopen(full_path, "wb");
@@ -206,14 +219,46 @@ int storage_save_file(const char *base_path, const char *filename,
     return 0;
 }
 
-int storage_save_text(const char *base_path, const char *filename,
-                      const char *text)
+static int local_save_text(StorageBackend *backend, const char *filename, const char *text)
 {
-    return storage_save_file(base_path, filename,
-                             (const uint8_t *)text, strlen(text));
+    return local_save_file(backend, filename, (const uint8_t *)text, strlen(text));
 }
 
-/* ── MIME type detection ─────────────────────────────────────────────────── */
+static int local_file_exists(StorageBackend *backend, const char *filename)
+{
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    char full_path[MAX_PATH_LEN * 2];
+    snprintf(full_path, sizeof(full_path), "%s/%s", storage->base_path, filename);
+    
+    struct stat st;
+    return (stat(full_path, &st) == 0) ? 1 : 0;
+}
+
+static char *local_get_public_url(StorageBackend *backend, const char *filename)
+{
+    (void)backend; (void)filename;
+    /* Local storage doesn't have public URLs */
+    return NULL;
+}
+
+/* ── filename generation (backend-agnostic) ───────────────────────────────── */
+
+void storage_gen_filename(const char *ext, char *out, size_t out_len)
+{
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    snprintf(out, out_len, "upload_%04d-%02d-%02d_%02d_%02d_%02d%s",
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+             t->tm_hour, t->tm_min, t->tm_sec,
+             ext ? ext : "");
+}
+
+void storage_ocr_filename(const char *saved_name, char *out, size_t out_len)
+{
+    const char *dot = strrchr(saved_name, '.');
+    size_t base_len = dot ? (size_t)(dot - saved_name) : strlen(saved_name);
+    snprintf(out, out_len, "%.*s_ocr_result.txt", (int)base_len, saved_name);
+}
 
 const char *storage_mime_type(const char *filename)
 {
@@ -231,4 +276,21 @@ const char *storage_mime_type(const char *filename)
     if (strcasecmp(ext, ".pdf")  == 0) return "application/pdf";
 
     return "application/octet-stream";
+}
+
+/* ── backend ops ──────────────────────────────────────────────────────────── */
+
+static const StorageBackendOps local_ops = {
+    .open           = local_open,
+    .close          = local_close,
+    .ensure_dirs    = local_ensure_dirs,
+    .save_file      = local_save_file,
+    .save_text      = local_save_text,
+    .file_exists    = local_file_exists,
+    .get_public_url = local_get_public_url
+};
+
+StorageBackend *storage_backend_local_open(const Config *cfg)
+{
+    return local_ops.open(cfg);
 }

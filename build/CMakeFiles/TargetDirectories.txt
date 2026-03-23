@@ -1,7 +1,0 @@
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/tgbot.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/edit_cache.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/rebuild_cache.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/list_install_components.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/install.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/install/local.dir
-/home/yfozekosh/temp/kaufbot/build/CMakeFiles/install/strip.dir

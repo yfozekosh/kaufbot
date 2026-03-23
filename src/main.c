@@ -3,8 +3,8 @@
 #include <signal.h>
 
 #include "config.h"
-#include "db.h"
-#include "storage.h"
+#include "db_backend.h"
+#include "storage_backend.h"
 #include "gemini.h"
 #include "processor.h"
 #include "bot.h"
@@ -29,38 +29,48 @@ int main(void)
         return EXIT_FAILURE;
     }
     LOG_INFO("config loaded. Model: %s", cfg.gemini_model);
-    LOG_INFO("storage: %s  |  DB: %s", cfg.storage_path, cfg.db_path);
+    LOG_INFO("storage: %s backend", cfg.storage_backend == STORAGE_BACKEND_SUPABASE ? "Supabase" : "Local");
+    LOG_INFO("database: %s backend", cfg.db_backend == DB_BACKEND_POSTGRES ? "PostgreSQL" : "SQLite");
     LOG_INFO("allowed users: %d", cfg.allowed_users_count);
 
-    /* ── Storage dirs ────────────────────────────────────────────────────── */
-    if (storage_ensure_dirs(cfg.storage_path) != 0) {
-        LOG_ERROR("failed to create storage directory: %s", cfg.storage_path);
+    /* ── Storage backend ─────────────────────────────────────────────────── */
+    StorageBackend *storage = storage_backend_open(&cfg);
+    if (!storage) {
+        LOG_ERROR("failed to open storage backend");
+        return EXIT_FAILURE;
+    }
+    
+    if (storage_backend_ensure_dirs(storage) != 0) {
+        LOG_ERROR("failed to initialize storage");
+        storage_backend_close(storage);
         return EXIT_FAILURE;
     }
 
-    /* ── Database ────────────────────────────────────────────────────────── */
-    DB *db = db_open(cfg.db_path);
+    /* ── Database backend ────────────────────────────────────────────────── */
+    DBBackend *db = db_backend_open(&cfg);
     if (!db) {
-        LOG_ERROR("failed to open database: %s", cfg.db_path);
+        LOG_ERROR("failed to open database backend");
+        storage_backend_close(storage);
         return EXIT_FAILURE;
     }
-    LOG_INFO("database opened: %s", cfg.db_path);
+    LOG_INFO("database backend opened successfully");
 
     /* ── Gemini client ───────────────────────────────────────────────────── */
     GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
     if (!gemini) {
         LOG_ERROR("failed to create Gemini client");
-        db_close(db);
+        db_backend_close(db);
+        storage_backend_close(storage);
         return EXIT_FAILURE;
     }
 
     /* ── Processor ───────────────────────────────────────────────────────── */
-    /* Pass NULL for strategy → uses default strategy_notify_and_skip */
-    Processor *processor = processor_new(db, cfg.storage_path, gemini, NULL);
+    Processor *processor = processor_new(db, storage, gemini, NULL);
     if (!processor) {
         LOG_ERROR("failed to create processor");
         gemini_free(gemini);
-        db_close(db);
+        db_backend_close(db);
+        storage_backend_close(storage);
         return EXIT_FAILURE;
     }
 
@@ -70,7 +80,8 @@ int main(void)
         LOG_ERROR("failed to create bot");
         processor_free(processor);
         gemini_free(gemini);
-        db_close(db);
+        db_backend_close(db);
+        storage_backend_close(storage);
         return EXIT_FAILURE;
     }
 
@@ -80,13 +91,14 @@ int main(void)
     signal(SIGTERM, on_signal);
 
     /* ── Run ─────────────────────────────────────────────────────────────── */
-    bot_start(bot); /* blocks until bot_stop() */
+    bot_start(bot);
 
     /* ── Cleanup ─────────────────────────────────────────────────────────── */
     bot_free(bot);
     processor_free(processor);
     gemini_free(gemini);
-    db_close(db);
+    db_backend_close(db);
+    storage_backend_close(storage);
 
     LOG_INFO("clean shutdown complete");
     return EXIT_SUCCESS;

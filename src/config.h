@@ -28,13 +28,42 @@
 #define MAX_PATH_LEN      512
 #define MAX_TOKEN_LEN     256
 #define MAX_MODEL_LEN     128
+#define MAX_URL_LEN       512
+
+/* ── Backend types ────────────────────────────────────────────────────────── */
+
+typedef enum {
+    STORAGE_BACKEND_LOCAL = 0,
+    STORAGE_BACKEND_SUPABASE = 1
+} StorageBackendType;
+
+typedef enum {
+    DB_BACKEND_SQLITE = 0,
+    DB_BACKEND_POSTGRES = 1
+} DBBackendType;
 
 typedef struct {
     char   telegram_token[MAX_TOKEN_LEN];
     char   gemini_api_key[MAX_TOKEN_LEN];
     char   gemini_model[MAX_MODEL_LEN];
-    char   storage_path[MAX_PATH_LEN];
-    char   db_path[MAX_PATH_LEN];
+    
+    /* Storage backend config */
+    StorageBackendType storage_backend;
+    char   storage_path[MAX_PATH_LEN];       /* for local */
+    char   supabase_url[MAX_URL_LEN];        /* for supabase */
+    char   supabase_anon_key[MAX_TOKEN_LEN]; /* for supabase */
+    char   supabase_bucket[MAX_PATH_LEN];    /* bucket name */
+    
+    /* Database backend config */
+    DBBackendType db_backend;
+    char   db_path[MAX_PATH_LEN];            /* for sqlite */
+    char   postgres_host[MAX_PATH_LEN];      /* for postgres */
+    char   postgres_port[16];                /* for postgres */
+    char   postgres_db[MAX_PATH_LEN];        /* for postgres */
+    char   postgres_user[MAX_PATH_LEN];      /* for postgres */
+    char   postgres_password[MAX_TOKEN_LEN]; /* for postgres */
+    char   postgres_ssl_mode[16];            /* for postgres (require/verify-full) */
+    
     int64_t allowed_users[MAX_ALLOWED_USERS];
     int    allowed_users_count;
 } Config;
