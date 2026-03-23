@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # ── Compiler flags ────────────────────────────────────────────────────────────
 add_compile_options(
-    -Wall -Wextra -Wpedantic
+    -Wall -Wextra -Wpedantic -Werror
     -O2
     -fstack-protector-strong
     # Reduce binary size on embedded targets

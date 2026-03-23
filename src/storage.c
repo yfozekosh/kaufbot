@@ -104,6 +104,7 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t *digest)
 
 void storage_sha256_hex(const uint8_t *data, size_t len, char *out)
 {
+    LOG_DEBUG("computing SHA256 for %zu bytes", len);
     SHA256_CTX ctx;
     uint8_t digest[32];
     sha256_init(&ctx);
@@ -112,6 +113,7 @@ void storage_sha256_hex(const uint8_t *data, size_t len, char *out)
     for (int i=0;i<32;i++)
         snprintf(out+i*2, 3, "%02x", digest[i]);
     out[64]='\0';
+    LOG_DEBUG("SHA256: %s", out);
 }
 
 /* ── directory helpers ────────────────────────────────────────────────────── */
@@ -119,11 +121,17 @@ void storage_sha256_hex(const uint8_t *data, size_t len, char *out)
 int storage_ensure_dirs(const char *base_path)
 {
     struct stat st;
-    if (stat(base_path, &st) == 0) return 0;
+    if (stat(base_path, &st) == 0) {
+        LOG_DEBUG("storage directory already exists: %s", base_path);
+        return 0;
+    }
 
-    /* Create parent directories recursively */
+    LOG_INFO("creating storage directory: %s", base_path);
     char *path = strdup(base_path);
-    if (!path) return -1;
+    if (!path) {
+        LOG_ERROR("failed to allocate memory for path");
+        return -1;
+    }
 
     char *p = path;
     if (*p == '/') p++;  /* skip leading slash */
@@ -133,20 +141,23 @@ int storage_ensure_dirs(const char *base_path)
         if (*p == '/') {
             *p = '\0';
             if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-                perror("[storage] mkdir");
+                LOG_ERROR("mkdir failed for %s: %s", path, strerror(errno));
                 free(path);
                 return -1;
             }
+            LOG_DEBUG("created directory: %s", path);
             *p = '/';
             p++;
         }
     }
     if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-        perror("[storage] mkdir");
+        LOG_ERROR("mkdir failed for %s: %s", path, strerror(errno));
         free(path);
         return -1;
     }
+    LOG_DEBUG("created directory: %s", path);
     free(path);
+    LOG_INFO("storage directory created successfully");
     return 0;
 }
 
@@ -178,18 +189,20 @@ int storage_save_file(const char *base_path, const char *filename,
     char full_path[MAX_PATH_LEN * 2];
     snprintf(full_path, sizeof(full_path), "%s/%s", base_path, filename);
 
+    LOG_DEBUG("saving file: %s (%zu bytes)", filename, len);
     FILE *f = fopen(full_path, "wb");
     if (!f) {
-        perror("[storage] fopen");
+        LOG_ERROR("fopen failed for %s: %s", full_path, strerror(errno));
         return -1;
     }
     size_t written = fwrite(data, 1, len, f);
     fclose(f);
 
     if (written != len) {
-        fprintf(stderr, "[storage] short write: %zu / %zu\n", written, len);
+        LOG_ERROR("short write for %s: %zu / %zu bytes", filename, written, len);
         return -1;
     }
+    LOG_DEBUG("file saved successfully: %s", filename);
     return 0;
 }
 

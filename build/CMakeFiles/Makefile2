@@ -64,12 +64,10 @@ CMAKE_BINARY_DIR = /home/yfozekosh/temp/kaufbot/build
 
 # The main recursive "all" target.
 all: CMakeFiles/tgbot.dir/all
-all: CMakeFiles/tgbot_tests.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
 codegen: CMakeFiles/tgbot.dir/codegen
-codegen: CMakeFiles/tgbot_tests.dir/codegen
 .PHONY : codegen
 
 # The main recursive "preinstall" target.
@@ -78,7 +76,6 @@ preinstall:
 
 # The main recursive "clean" target.
 clean: CMakeFiles/tgbot.dir/clean
-clean: CMakeFiles/tgbot_tests.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -112,38 +109,6 @@ CMakeFiles/tgbot.dir/codegen:
 CMakeFiles/tgbot.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot.dir/build.make CMakeFiles/tgbot.dir/clean
 .PHONY : CMakeFiles/tgbot.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/tgbot_tests.dir
-
-# All Build rule for target.
-CMakeFiles/tgbot_tests.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/yfozekosh/temp/kaufbot/build/CMakeFiles --progress-num=10,11,12,13,14,15,16,17,18,19,20 "Built target tgbot_tests"
-.PHONY : CMakeFiles/tgbot_tests.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/tgbot_tests.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yfozekosh/temp/kaufbot/build/CMakeFiles 11
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/tgbot_tests.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yfozekosh/temp/kaufbot/build/CMakeFiles 0
-.PHONY : CMakeFiles/tgbot_tests.dir/rule
-
-# Convenience name for target.
-tgbot_tests: CMakeFiles/tgbot_tests.dir/rule
-.PHONY : tgbot_tests
-
-# codegen rule for target.
-CMakeFiles/tgbot_tests.dir/codegen:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/yfozekosh/temp/kaufbot/build/CMakeFiles --progress-num=10,11,12,13,14,15,16,17,18,19,20 "Finished codegen for target tgbot_tests"
-.PHONY : CMakeFiles/tgbot_tests.dir/codegen
-
-# clean rule for target.
-CMakeFiles/tgbot_tests.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/tgbot_tests.dir/build.make CMakeFiles/tgbot_tests.dir/clean
-.PHONY : CMakeFiles/tgbot_tests.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

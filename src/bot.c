@@ -1,4 +1,5 @@
 #include "bot.h"
+#include "config.h"
 #include "../third_party/cjson/cJSON.h"
 
 #include <stdio.h>
@@ -17,6 +18,7 @@
 struct TgBot {
     const Config   *cfg;
     Processor      *processor;
+    DB             *db;
     atomic_int      running;
     long            offset;   /* next update_id to request */
 };
@@ -48,12 +50,6 @@ static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *userdata)
     return incoming;
 }
 
-static void growbuf_reset(GrowBuf *buf)
-{
-    buf->len = 0;
-    if (buf->data) buf->data[0] = '\0';
-}
-
 static void growbuf_free(GrowBuf *buf)
 {
     free(buf->data);
@@ -67,6 +63,7 @@ static void growbuf_free(GrowBuf *buf)
 /* Perform a GET request. Returns heap-allocated body or NULL on error. */
 static char *http_get(const char *url)
 {
+    LOG_DEBUG("GET %s", url);
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
 
@@ -83,7 +80,7 @@ static char *http_get(const char *url)
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[bot] GET %s failed: %s\n", url, curl_easy_strerror(res));
+        LOG_ERROR("GET %s failed: %s", url, curl_easy_strerror(res));
         growbuf_free(&buf);
         return NULL;
     }
@@ -93,6 +90,7 @@ static char *http_get(const char *url)
 /* Perform a long-poll GET (custom timeout). Returns heap-allocated body. */
 static char *http_get_poll(const char *url, long timeout_sec)
 {
+    LOG_DEBUG("polling %s (timeout=%lds)", url, timeout_sec);
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
 
@@ -108,7 +106,7 @@ static char *http_get_poll(const char *url, long timeout_sec)
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[bot] poll failed: %s\n", curl_easy_strerror(res));
+        LOG_ERROR("poll failed: %s", curl_easy_strerror(res));
         growbuf_free(&buf);
         return NULL;
     }
@@ -118,6 +116,7 @@ static char *http_get_poll(const char *url, long timeout_sec)
 /* POST JSON body, return heap-allocated response body. */
 static char *http_post_json(const char *url, const char *json_body)
 {
+    LOG_DEBUG("POST %s", url);
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
 
@@ -138,7 +137,7 @@ static char *http_post_json(const char *url, const char *json_body)
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[bot] POST failed: %s\n", curl_easy_strerror(res));
+        LOG_ERROR("POST failed: %s", curl_easy_strerror(res));
         growbuf_free(&buf);
         return NULL;
     }
@@ -200,6 +199,7 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path,
     snprintf(url, sizeof(url), "%s%s/%s",
              "https://api.telegram.org/file/bot",
              bot->cfg->telegram_token, file_path);
+    LOG_DEBUG("downloading file: %s", file_path);
 
     CURL *curl = curl_easy_init();
     if (!curl) return NULL;
@@ -216,7 +216,7 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path,
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[bot] download failed: %s\n", curl_easy_strerror(res));
+        LOG_ERROR("download failed: %s", curl_easy_strerror(res));
         growbuf_free(&buf);
         return NULL;
     }
@@ -226,6 +226,23 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path,
 }
 
 /* ── update handlers ─────────────────────────────────────────────────────── */
+
+/* Callback for db_list to format file records */
+typedef struct { char *buf; int pos; int cap; int count; } ListCtx;
+
+static void list_cb(const FileRecord *rec, void *ud)
+{
+    ListCtx *c = (ListCtx *)ud;
+    if (c->count >= 10) return; /* cap at 10 entries */
+    c->pos += snprintf(c->buf + c->pos, c->cap - c->pos,
+        "%d. %s\n   📄 %s | %lld bytes | OCR: %s\n\n",
+        c->count + 1,
+        rec->saved_file_name,
+        rec->original_file_name,
+        (long long)rec->file_size_bytes,
+        rec->is_ocr_processed ? "✅" : "❌");
+    c->count++;
+}
 
 static void handle_command(TgBot *bot, int64_t chat_id, const char *text)
 {
@@ -244,38 +261,15 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text)
     }
 
     if (strncmp(text, "/list", 5) == 0) {
-        /* Handled via db_list callback; build reply string */
-        /* We pass bot pointer so the callback can call tg_send_message */
-        /* For simplicity, build a fixed-size buffer */
+        /* Build reply string with recent uploads */
         char reply[MAX_REPLY_LEN];
         int  pos = 0;
         pos += snprintf(reply + pos, sizeof(reply) - pos, "📁 Recent uploads:\n\n");
 
-        /* Simple counter closure via static (single-threaded bot) */
-        /* Use a small struct passed as userdata */
-        typedef struct { char *buf; int pos; int cap; int count; } ListCtx;
         ListCtx ctx = { reply, pos, (int)sizeof(reply), 0 };
-
-        void list_cb(const FileRecord *rec, void *ud) {
-            ListCtx *c = (ListCtx *)ud;
-            if (c->count >= 10) return; /* cap at 10 entries */
-            c->pos += snprintf(c->buf + c->pos, c->cap - c->pos,
-                "%d. %s\n   📄 %s | %lld bytes | OCR: %s\n\n",
-                c->count + 1,
-                rec->saved_file_name,
-                rec->original_file_name,
-                (long long)rec->file_size_bytes,
-                rec->is_ocr_processed ? "✅" : "❌");
-            c->count++;
-        }
-
-        extern int db_list(DB *db, db_list_cb cb, void *userdata);
-        /* Note: we need db access here – pass via userdata trick */
-        /* db is stored in processor; expose accessor */
-        /* For now send a "not available in this context" note */
-        /* A clean solution: store db* in TgBot (see below in bot_new) */
-        tg_send_message(bot, chat_id, "ℹ️ Use /list — feature available, see README.");
-        (void)list_cb; (void)ctx; /* suppress unused warnings */
+        db_list(bot->db, list_cb, &ctx);
+        
+        tg_send_message(bot, chat_id, reply);
         return;
     }
 
@@ -286,11 +280,14 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text)
 static void handle_file(TgBot *bot, int64_t chat_id,
                         const char *file_id, const char *original_name)
 {
+    LOG_DEBUG("handling file: %s from chat %lld", original_name, (long long)chat_id);
+    
     /* 1. Get file path from Telegram */
     tg_send_message(bot, chat_id, "⏳ Downloading…");
 
     char *file_path = tg_get_file_path(bot, file_id);
     if (!file_path) {
+        LOG_ERROR("could not retrieve file info from Telegram");
         tg_send_message(bot, chat_id, "❌ Could not retrieve file info from Telegram.");
         return;
     }
@@ -301,11 +298,13 @@ static void handle_file(TgBot *bot, int64_t chat_id,
     free(file_path);
 
     if (!data) {
+        LOG_ERROR("file download failed");
         tg_send_message(bot, chat_id, "❌ File download failed.");
         return;
     }
 
     if (data_len == 0) {
+        LOG_WARN("downloaded file is empty");
         tg_send_message(bot, chat_id, "❌ Downloaded file is empty.");
         free(data);
         return;
@@ -340,6 +339,7 @@ static void dispatch_update(TgBot *bot, cJSON *update)
     if (!config_is_allowed(bot->cfg, user_id)) {
         cJSON *chat    = cJSON_GetObjectItem(message, "chat");
         cJSON *chat_id = chat ? cJSON_GetObjectItem(chat, "id") : NULL;
+        LOG_WARN("unauthorized user %lld attempted access", (long long)user_id);
         if (cJSON_IsNumber(chat_id))
             tg_send_message(bot, (int64_t)chat_id->valuedouble,
                             "🚫 You are not authorised to use this bot.");
@@ -354,6 +354,7 @@ static void dispatch_update(TgBot *bot, cJSON *update)
     /* ── Text / command ── */
     cJSON *text = cJSON_GetObjectItem(message, "text");
     if (cJSON_IsString(text)) {
+        LOG_DEBUG("received command from user %lld: %s", (long long)user_id, text->valuestring);
         handle_command(bot, cid, text->valuestring);
         return;
     }
@@ -364,8 +365,10 @@ static void dispatch_update(TgBot *bot, cJSON *update)
         int n = cJSON_GetArraySize(photos);
         cJSON *largest = cJSON_GetArrayItem(photos, n - 1);
         cJSON *fid     = cJSON_GetObjectItem(largest, "file_id");
-        if (cJSON_IsString(fid))
+        if (cJSON_IsString(fid)) {
+            LOG_DEBUG("received photo from user %lld", (long long)user_id);
             handle_file(bot, cid, fid->valuestring, "photo.jpg");
+        }
         return;
     }
 
@@ -379,24 +382,28 @@ static void dispatch_update(TgBot *bot, cJSON *update)
         /* Reject files over Telegram's 20MB bot API limit */
         if (cJSON_IsNumber(fsize) &&
             fsize->valuedouble > MAX_FILE_MB * 1024 * 1024) {
+            LOG_WARN("user %lld attempted to upload file exceeding 20MB limit", (long long)user_id);
             tg_send_message(bot, cid,
                 "❌ File exceeds 20 MB — Telegram bot API limit.");
             return;
         }
 
         const char *name = cJSON_IsString(fname) ? fname->valuestring : "file";
-        if (cJSON_IsString(fid))
+        if (cJSON_IsString(fid)) {
+            LOG_DEBUG("received document from user %lld: %s", (long long)user_id, name);
             handle_file(bot, cid, fid->valuestring, name);
+        }
         return;
     }
 
+    LOG_WARN("unsupported message type from user %lld", (long long)user_id);
     tg_send_message(bot, cid,
         "🤷 Unsupported message type. Please send an image or PDF.");
 }
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-TgBot *bot_new(const Config *cfg, Processor *processor)
+TgBot *bot_new(const Config *cfg, Processor *processor, DB *db)
 {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
@@ -404,6 +411,7 @@ TgBot *bot_new(const Config *cfg, Processor *processor)
     if (!bot) return NULL;
     bot->cfg       = cfg;
     bot->processor = processor;
+    bot->db        = db;
     bot->offset    = 0;
     atomic_store(&bot->running, 1);
     return bot;
@@ -425,7 +433,7 @@ void bot_stop(TgBot *bot)
 void bot_start(TgBot *bot)
 {
     char url[MAX_URL_LEN];
-    printf("[bot] Starting long-poll loop (timeout=%ds)\n", POLL_TIMEOUT);
+    LOG_INFO("starting long-poll loop (timeout=%ds)", POLL_TIMEOUT);
 
     while (atomic_load(&bot->running)) {
         /* Build getUpdates URL */
@@ -436,7 +444,7 @@ void bot_start(TgBot *bot)
 
         char *body = http_get_poll(url, POLL_TIMEOUT);
         if (!body) {
-            fprintf(stderr, "[bot] getUpdates failed, retrying in 5s\n");
+            LOG_ERROR("getUpdates failed, retrying in 5s");
             sleep(5);
             continue;
         }
@@ -445,7 +453,7 @@ void bot_start(TgBot *bot)
         free(body);
 
         if (!json) {
-            fprintf(stderr, "[bot] failed to parse getUpdates response\n");
+            LOG_ERROR("failed to parse getUpdates response");
             sleep(2);
             continue;
         }
@@ -453,7 +461,7 @@ void bot_start(TgBot *bot)
         cJSON *ok = cJSON_GetObjectItem(json, "ok");
         if (!cJSON_IsTrue(ok)) {
             cJSON *desc = cJSON_GetObjectItem(json, "description");
-            fprintf(stderr, "[bot] getUpdates not ok: %s\n",
+            LOG_ERROR("getUpdates not ok: %s",
                     cJSON_IsString(desc) ? desc->valuestring : "?");
             cJSON_Delete(json);
             sleep(5);
@@ -463,6 +471,7 @@ void bot_start(TgBot *bot)
         cJSON *result = cJSON_GetObjectItem(json, "result");
         if (cJSON_IsArray(result)) {
             int n = cJSON_GetArraySize(result);
+            LOG_DEBUG("received %d updates", n);
             for (int i = 0; i < n; i++) {
                 cJSON *update = cJSON_GetArrayItem(result, i);
                 cJSON *uid    = cJSON_GetObjectItem(update, "update_id");
@@ -476,5 +485,5 @@ void bot_start(TgBot *bot)
         cJSON_Delete(json);
     }
 
-    printf("[bot] Polling loop stopped.\n");
+    LOG_INFO("polling loop stopped");
 }

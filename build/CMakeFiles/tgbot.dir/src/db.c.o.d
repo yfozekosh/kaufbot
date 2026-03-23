@@ -11,7 +11,7 @@ CMakeFiles/tgbot.dir/src/db.c.o: /home/yfozekosh/temp/kaufbot/src/db.c \
  /usr/include/bits/stdint-intn.h /usr/include/bits/stdint-uintn.h \
  /usr/include/bits/stdint-least.h /usr/include/sqlite3.h \
  /usr/lib/gcc/x86_64-redhat-linux/15/include/stdarg.h \
- /usr/include/stdio.h \
+ /home/yfozekosh/temp/kaufbot/src/config.h /usr/include/stdio.h \
  /usr/lib/gcc/x86_64-redhat-linux/15/include/stddef.h \
  /usr/include/bits/types/__fpos_t.h /usr/include/bits/types/__mbstate_t.h \
  /usr/include/bits/types/__fpos64_t.h /usr/include/bits/types/__FILE.h \

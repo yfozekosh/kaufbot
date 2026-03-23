@@ -1,4 +1,5 @@
 #include "db.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,10 +24,11 @@ static int db_exec(sqlite3 *conn, const char *sql)
     char *err = NULL;
     int rc = sqlite3_exec(conn, sql, NULL, NULL, &err);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] exec error: %s\n", err ? err : "unknown");
+        LOG_ERROR("exec error: %s", err ? err : "unknown");
         sqlite3_free(err);
         return -1;
     }
+    LOG_DEBUG("SQL executed: %s", sql);
     return 0;
 }
 
@@ -34,12 +36,16 @@ static int db_exec(sqlite3 *conn, const char *sql)
 
 DB *db_open(const char *path)
 {
+    LOG_INFO("opening database: %s", path);
     DB *db = calloc(1, sizeof(DB));
-    if (!db) return NULL;
+    if (!db) {
+        LOG_ERROR("failed to allocate memory for DB");
+        return NULL;
+    }
 
     int rc = sqlite3_open(path, &db->conn);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] open %s: %s\n", path, sqlite3_errmsg(db->conn));
+        LOG_ERROR("open %s: %s", path, sqlite3_errmsg(db->conn));
         free(db);
         return NULL;
     }
@@ -49,6 +55,7 @@ DB *db_open(const char *path)
     sqlite3_exec(db->conn, "PRAGMA synchronous=NORMAL;", NULL, NULL, NULL);
     sqlite3_exec(db->conn, "PRAGMA busy_timeout=5000;",  NULL, NULL, NULL);
     sqlite3_exec(db->conn, "PRAGMA cache_size=-2000;",   NULL, NULL, NULL); /* 2MB */
+    LOG_DEBUG("database performance tuning applied");
 
     const char *schema =
         "CREATE TABLE IF NOT EXISTS files ("
@@ -74,11 +81,13 @@ DB *db_open(const char *path)
         "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);";
 
     if (db_exec(db->conn, schema) != 0) {
+        LOG_ERROR("failed to create database schema");
         sqlite3_close(db->conn);
         free(db);
         return NULL;
     }
 
+    LOG_INFO("database opened and schema verified");
     return db;
 }
 
@@ -94,6 +103,7 @@ void db_close(DB *db)
 
 int db_find_by_hash(DB *db, const char *hash, FileRecord *out)
 {
+    LOG_DEBUG("looking up file by hash: %.16s...", hash);
     const char *sql =
         "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
         "       file_hash, is_ocr_processed, ocr_file_name, created_at, updated_at"
@@ -102,7 +112,7 @@ int db_find_by_hash(DB *db, const char *hash, FileRecord *out)
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare find_by_hash: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare find_by_hash: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
     sqlite3_bind_text(stmt, 1, hash, -1, SQLITE_STATIC);
@@ -110,10 +120,11 @@ int db_find_by_hash(DB *db, const char *hash, FileRecord *out)
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
         sqlite3_finalize(stmt);
+        LOG_DEBUG("file not found by hash");
         return 1; /* not found */
     }
     if (rc != SQLITE_ROW) {
-        fprintf(stderr, "[db] step find_by_hash: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("step find_by_hash: %s", sqlite3_errmsg(db->conn));
         sqlite3_finalize(stmt);
         return -1;
     }
@@ -130,6 +141,7 @@ int db_find_by_hash(DB *db, const char *hash, FileRecord *out)
     strncpy(out->updated_at,      (const char *)sqlite3_column_text(stmt, 8), DB_DATE_LEN - 1);
 
     sqlite3_finalize(stmt);
+    LOG_DEBUG("file found: id=%lld, ocr=%s", (long long)out->id, out->is_ocr_processed ? "done" : "pending");
     return 0;
 }
 
@@ -140,6 +152,7 @@ int db_insert(DB *db, FileRecord *rec)
     char now[DB_DATE_LEN];
     now_iso8601(now, sizeof(now));
 
+    LOG_DEBUG("inserting file record: %s (%lld bytes)", rec->original_file_name, (long long)rec->file_size_bytes);
     const char *sql =
         "INSERT INTO files"
         " (original_file_name, file_size_bytes, saved_file_name, file_hash,"
@@ -149,7 +162,7 @@ int db_insert(DB *db, FileRecord *rec)
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare insert: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare insert: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
 
@@ -166,13 +179,14 @@ int db_insert(DB *db, FileRecord *rec)
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        fprintf(stderr, "[db] insert error: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("insert error: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
 
     rec->id = sqlite3_last_insert_rowid(db->conn);
-    strncpy(rec->created_at, now, DB_DATE_LEN - 1);
-    strncpy(rec->updated_at, now, DB_DATE_LEN - 1);
+    snprintf(rec->created_at, DB_DATE_LEN, "%s", now);
+    snprintf(rec->updated_at, DB_DATE_LEN, "%s", now);
+    LOG_DEBUG("file record inserted with id=%lld", (long long)rec->id);
     return 0;
 }
 
@@ -183,6 +197,7 @@ int db_mark_ocr_done(DB *db, int64_t id, const char *ocr_file_name)
     char now[DB_DATE_LEN];
     now_iso8601(now, sizeof(now));
 
+    LOG_DEBUG("marking OCR done for file id=%lld: %s", (long long)id, ocr_file_name);
     const char *sql =
         "UPDATE files SET is_ocr_processed=1, ocr_file_name=?, updated_at=?"
         " WHERE id=?";
@@ -190,7 +205,7 @@ int db_mark_ocr_done(DB *db, int64_t id, const char *ocr_file_name)
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare mark_ocr: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare mark_ocr: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
 
@@ -202,9 +217,10 @@ int db_mark_ocr_done(DB *db, int64_t id, const char *ocr_file_name)
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        fprintf(stderr, "[db] mark_ocr error: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("mark_ocr error: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
+    LOG_DEBUG("OCR marked done for file id=%lld", (long long)id);
     return 0;
 }
 
@@ -212,6 +228,7 @@ int db_mark_ocr_done(DB *db, int64_t id, const char *ocr_file_name)
 
 int db_list(DB *db, db_list_cb cb, void *userdata)
 {
+    LOG_DEBUG("listing all files");
     const char *sql =
         "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
         "       file_hash, is_ocr_processed, ocr_file_name, created_at, updated_at"
@@ -220,10 +237,11 @@ int db_list(DB *db, db_list_cb cb, void *userdata)
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare list: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare list: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
 
+    int count = 0;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         FileRecord rec;
         memset(&rec, 0, sizeof(rec));
@@ -237,9 +255,11 @@ int db_list(DB *db, db_list_cb cb, void *userdata)
         strncpy(rec.created_at,    (const char *)sqlite3_column_text(stmt, 7), DB_DATE_LEN - 1);
         strncpy(rec.updated_at,    (const char *)sqlite3_column_text(stmt, 8), DB_DATE_LEN - 1);
         cb(&rec, userdata);
+        count++;
     }
 
     sqlite3_finalize(stmt);
+    LOG_DEBUG("listed %d files", count);
     return (rc == SQLITE_DONE) ? 0 : -1;
 }
 
@@ -250,18 +270,20 @@ int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
     char now[DB_DATE_LEN];
     now_iso8601(now, sizeof(now));
 
+    LOG_DEBUG("marking parsing done for file id=%lld", (long long)file_id);
     /* Check if already exists */
     const char *check_sql = "SELECT id FROM parsed_receipts WHERE file_id = ?";
     sqlite3_stmt *check_stmt;
     int rc = sqlite3_prepare_v2(db->conn, check_sql, -1, &check_stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare check_parsing: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare check_parsing: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
     sqlite3_bind_int64(check_stmt, 1, file_id);
     rc = sqlite3_step(check_stmt);
     int exists = (rc == SQLITE_ROW);
     sqlite3_finalize(check_stmt);
+    LOG_DEBUG("parsed receipt %s for file id=%lld", exists ? "exists" : "new", (long long)file_id);
 
     const char *sql;
     sqlite3_stmt *stmt;
@@ -269,7 +291,7 @@ int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
         sql = "UPDATE parsed_receipts SET parsed_json=?, updated_at=? WHERE file_id=?";
         rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "[db] prepare update_parsing: %s\n", sqlite3_errmsg(db->conn));
+            LOG_ERROR("prepare update_parsing: %s", sqlite3_errmsg(db->conn));
             return -1;
         }
         sqlite3_bind_text(stmt,  1, parsed_json, -1, SQLITE_STATIC);
@@ -280,7 +302,7 @@ int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
               " VALUES (?, ?, ?, ?)";
         rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "[db] prepare insert_parsing: %s\n", sqlite3_errmsg(db->conn));
+            LOG_ERROR("prepare insert_parsing: %s", sqlite3_errmsg(db->conn));
             return -1;
         }
         sqlite3_bind_int64(stmt, 1, file_id);
@@ -293,9 +315,10 @@ int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        fprintf(stderr, "[db] parsing error: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("parsing error: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
+    LOG_DEBUG("parsing saved for file id=%lld", (long long)file_id);
     return 0;
 }
 
@@ -303,6 +326,7 @@ int db_mark_parsing_done(DB *db, int64_t file_id, const char *parsed_json)
 
 int db_get_parsed_receipt(DB *db, int64_t file_id, ParsedReceipt *out)
 {
+    LOG_DEBUG("getting parsed receipt for file id=%lld", (long long)file_id);
     const char *sql =
         "SELECT id, file_id, parsed_json, created_at, updated_at"
         " FROM parsed_receipts WHERE file_id = ? LIMIT 1";
@@ -310,7 +334,7 @@ int db_get_parsed_receipt(DB *db, int64_t file_id, ParsedReceipt *out)
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] prepare get_parsed: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("prepare get_parsed: %s", sqlite3_errmsg(db->conn));
         return -1;
     }
     sqlite3_bind_int64(stmt, 1, file_id);
@@ -318,10 +342,11 @@ int db_get_parsed_receipt(DB *db, int64_t file_id, ParsedReceipt *out)
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
         sqlite3_finalize(stmt);
+        LOG_DEBUG("parsed receipt not found for file id=%lld", (long long)file_id);
         return 1; /* not found */
     }
     if (rc != SQLITE_ROW) {
-        fprintf(stderr, "[db] step get_parsed: %s\n", sqlite3_errmsg(db->conn));
+        LOG_ERROR("step get_parsed: %s", sqlite3_errmsg(db->conn));
         sqlite3_finalize(stmt);
         return -1;
     }
@@ -334,5 +359,6 @@ int db_get_parsed_receipt(DB *db, int64_t file_id, ParsedReceipt *out)
     strncpy(out->updated_at,  (const char *)sqlite3_column_text(stmt, 4), DB_DATE_LEN - 1);
 
     sqlite3_finalize(stmt);
+    LOG_DEBUG("parsed receipt found for file id=%lld", (long long)file_id);
     return 0;
 }

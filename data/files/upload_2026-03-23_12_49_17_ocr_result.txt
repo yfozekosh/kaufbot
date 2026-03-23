@@ -1,0 +1,43 @@
+Deine PAYBACK Kartennr.: XXXXXXXXXX5577
+Punktetestand vor Einkauf: 6
+Dieser Punktestand entspricht: 0,06 EUR
+Für diesen Einkauf erhältst Du von dm
+nkte auf punktefähige Artikel
+1 of 1 e 11°P
+ACH °P 154°P
+Punkte für diesen Einkauf 165°P
+Dies entspricht 1,65 EUR.
+****************************************
+Öffnungszeiten auf dm.de
+Steuer-Nr.:34092/30007
+
+******* FISKALINFORMATIONEN (TSE) *******
+Start: 2026-03-18 15:03:38
+Ende: 2026-03-18 15:04:22
+SN-Kasse: FD279211 TA-Nummer: 1010728
+SN-TSE: 258d50364651327872c87317f8989bd97b
+dfc9737ea380818b7fcb076d006950
+Signaturzähler: 2022519 Signatur: TEZ4D9s
+OKGKm1HZyvqXjIlILIRj588ynYNtxeazkoKQnqKEeUh
+F9hp8e0hSEQC+wLiUzQyIbwtg6LLOiejyp2dA==
+
+-K-U-N-D-E-N-B-E-L-E-G-
+
+Terminal-ID : 69728302
+TA-Nr 343182 BNr 3531
+
+Kartenzahlung
+kontaktlos
+girocard
+
+EUR 22,60
+
+PAN ####################################4017
+Karte10 gültig bis ##/##
+EMV-AID A000000359101002800101
+Genehmigungs-Nr 551840
+PAYBACK null
+Datum 18.03.26 15:03 Uhr
+========================================
+*** Zahlung erfolgt ***
+========================================

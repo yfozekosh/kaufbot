@@ -1,5 +1,6 @@
 #include "gemini.h"
 #include "storage.h"
+#include "config.h"
 #include "../third_party/cjson/cJSON.h"
 
 #include <stdio.h>
@@ -158,10 +159,13 @@ char *gemini_extract_text(GeminiClient *client,
                           const uint8_t *data, size_t len,
                           const char *filename)
 {
+    LOG_INFO("extracting text from: %s (%zu bytes)", filename, len);
+    
     /* 1. Base64-encode the file */
+    LOG_DEBUG("base64 encoding %zu bytes", len);
     char *b64 = base64_encode(data, len);
     if (!b64) {
-        fprintf(stderr, "[gemini] base64 alloc failed\n");
+        LOG_ERROR("base64 alloc failed");
         return NULL;
     }
 
@@ -194,7 +198,7 @@ char *gemini_extract_text(GeminiClient *client,
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!body) {
-        fprintf(stderr, "[gemini] JSON serialization failed\n");
+        LOG_ERROR("JSON serialization failed");
         return NULL;
     }
 
@@ -202,11 +206,12 @@ char *gemini_extract_text(GeminiClient *client,
     char url[512];
     snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s",
              GEMINI_API_BASE, client->model, client->api_key);
+    LOG_DEBUG("sending request to: %s", url);
 
     /* 4. HTTP POST via libcurl */
     CURL *curl = curl_easy_init();
     if (!curl) {
-        fprintf(stderr, "[gemini] curl_easy_init failed\n");
+        LOG_ERROR("curl_easy_init failed");
         free(body);
         return NULL;
     }
@@ -233,14 +238,13 @@ char *gemini_extract_text(GeminiClient *client,
     free(body);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[gemini] curl error: %s\n", curl_easy_strerror(res));
+        LOG_ERROR("curl error: %s", curl_easy_strerror(res));
         free(resp.data);
         return NULL;
     }
 
     if (http_code != 200) {
-        fprintf(stderr, "[gemini] HTTP %ld: %.400s\n",
-                http_code, resp.data ? resp.data : "(empty)");
+        LOG_ERROR("HTTP %ld: %.400s", http_code, resp.data ? resp.data : "(empty)");
         free(resp.data);
         return NULL;
     }
@@ -250,7 +254,7 @@ char *gemini_extract_text(GeminiClient *client,
     free(resp.data);
 
     if (!json) {
-        fprintf(stderr, "[gemini] failed to parse response JSON\n");
+        LOG_ERROR("failed to parse response JSON");
         return NULL;
     }
 
@@ -258,8 +262,7 @@ char *gemini_extract_text(GeminiClient *client,
     cJSON *err_obj = cJSON_GetObjectItem(json, "error");
     if (err_obj) {
         cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        fprintf(stderr, "[gemini] API error: %s\n",
-                msg ? msg->valuestring : "unknown");
+        LOG_ERROR("API error: %s", msg ? msg->valuestring : "unknown");
         cJSON_Delete(json);
         return NULL;
     }
@@ -267,7 +270,7 @@ char *gemini_extract_text(GeminiClient *client,
     /* Navigate: candidates[0].content.parts[0].text */
     cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
     if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        fprintf(stderr, "[gemini] no candidates in response\n");
+        LOG_ERROR("no candidates in response");
         cJSON_Delete(json);
         return NULL;
     }
@@ -275,25 +278,28 @@ char *gemini_extract_text(GeminiClient *client,
     cJSON *cont    = cJSON_GetObjectItem(cand0, "content");
     cJSON *parts2  = cJSON_GetObjectItem(cont,  "parts");
     if (!cJSON_IsArray(parts2) || cJSON_GetArraySize(parts2) == 0) {
-        fprintf(stderr, "[gemini] no parts in response\n");
+        LOG_ERROR("no parts in response");
         cJSON_Delete(json);
         return NULL;
     }
     cJSON *part0 = cJSON_GetArrayItem(parts2, 0);
     cJSON *text  = cJSON_GetObjectItem(part0, "text");
     if (!cJSON_IsString(text)) {
-        fprintf(stderr, "[gemini] no text in response part\n");
+        LOG_ERROR("no text in response part");
         cJSON_Delete(json);
         return NULL;
     }
 
     char *result = strdup(text->valuestring);
     cJSON_Delete(json);
+    LOG_INFO("text extraction successful");
     return result; /* caller must free() */
 }
 
 char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
 {
+    LOG_INFO("parsing receipt text (%zu chars)", strlen(ocr_text));
+    
     /* 1. Build JSON payload with cJSON */
     cJSON *root    = cJSON_CreateObject();
     cJSON *contents = cJSON_AddArrayToObject(root, "contents");
@@ -319,7 +325,7 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!body) {
-        fprintf(stderr, "[gemini] JSON serialization failed\n");
+        LOG_ERROR("JSON serialization failed");
         return NULL;
     }
 
@@ -327,11 +333,12 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     char url[512];
     snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s",
              GEMINI_API_BASE, client->model, client->api_key);
+    LOG_DEBUG("sending request to: %s", url);
 
     /* 3. HTTP POST via libcurl */
     CURL *curl = curl_easy_init();
     if (!curl) {
-        fprintf(stderr, "[gemini] curl_easy_init failed\n");
+        LOG_ERROR("curl_easy_init failed");
         free(body);
         return NULL;
     }
@@ -358,14 +365,13 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     free(body);
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "[gemini] curl error: %s\n", curl_easy_strerror(res));
+        LOG_ERROR("curl error: %s", curl_easy_strerror(res));
         free(resp.data);
         return NULL;
     }
 
     if (http_code != 200) {
-        fprintf(stderr, "[gemini] HTTP %ld: %.400s\n",
-                http_code, resp.data ? resp.data : "(empty)");
+        LOG_ERROR("HTTP %ld: %.400s", http_code, resp.data ? resp.data : "(empty)");
         free(resp.data);
         return NULL;
     }
@@ -375,7 +381,7 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     free(resp.data);
 
     if (!json) {
-        fprintf(stderr, "[gemini] failed to parse response JSON\n");
+        LOG_ERROR("failed to parse response JSON");
         return NULL;
     }
 
@@ -383,8 +389,7 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     cJSON *err_obj = cJSON_GetObjectItem(json, "error");
     if (err_obj) {
         cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        fprintf(stderr, "[gemini] API error: %s\n",
-                msg ? msg->valuestring : "unknown");
+        LOG_ERROR("API error: %s", msg ? msg->valuestring : "unknown");
         cJSON_Delete(json);
         return NULL;
     }
@@ -392,7 +397,7 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     /* Navigate: candidates[0].content.parts[0].text */
     cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
     if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        fprintf(stderr, "[gemini] no candidates in response\n");
+        LOG_ERROR("no candidates in response");
         cJSON_Delete(json);
         return NULL;
     }
@@ -400,19 +405,20 @@ char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
     cJSON *cont    = cJSON_GetObjectItem(cand0, "content");
     cJSON *parts2  = cJSON_GetObjectItem(cont,  "parts");
     if (!cJSON_IsArray(parts2) || cJSON_GetArraySize(parts2) == 0) {
-        fprintf(stderr, "[gemini] no parts in response\n");
+        LOG_ERROR("no parts in response");
         cJSON_Delete(json);
         return NULL;
     }
     cJSON *part0 = cJSON_GetArrayItem(parts2, 0);
     cJSON *text  = cJSON_GetObjectItem(part0, "text");
     if (!cJSON_IsString(text)) {
-        fprintf(stderr, "[gemini] no text in response part\n");
+        LOG_ERROR("no text in response part");
         cJSON_Delete(json);
         return NULL;
     }
 
     char *result = strdup(text->valuestring);
     cJSON_Delete(json);
+    LOG_INFO("receipt parsing successful");
     return result; /* caller must free() */
 }

@@ -6,5 +6,5 @@ C_DEFINES =
 
 C_INCLUDES = -I/home/yfozekosh/temp/kaufbot/src -I/home/yfozekosh/temp/kaufbot/third_party/cjson
 
-C_FLAGS = -std=gnu11 -Wall -Wextra -Wpedantic -O2 -fstack-protector-strong -ffunction-sections -fdata-sections
+C_FLAGS = -std=gnu11 -Wall -Wextra -Wpedantic -Werror -O2 -fstack-protector-strong -ffunction-sections -fdata-sections
 

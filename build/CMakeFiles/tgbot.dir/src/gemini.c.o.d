@@ -13,8 +13,7 @@ CMakeFiles/tgbot.dir/src/gemini.c.o: \
  /usr/include/bits/stdint-intn.h /usr/include/bits/stdint-uintn.h \
  /usr/include/bits/stdint-least.h \
  /home/yfozekosh/temp/kaufbot/src/storage.h \
- /home/yfozekosh/temp/kaufbot/src/../third_party/cjson/cJSON.h \
- /usr/include/stdio.h \
+ /home/yfozekosh/temp/kaufbot/src/config.h /usr/include/stdio.h \
  /usr/lib/gcc/x86_64-redhat-linux/15/include/stdarg.h \
  /usr/include/bits/types/__fpos_t.h /usr/include/bits/types/__mbstate_t.h \
  /usr/include/bits/types/__fpos64_t.h /usr/include/bits/types/__FILE.h \
@@ -22,6 +21,7 @@ CMakeFiles/tgbot.dir/src/gemini.c.o: \
  /usr/include/bits/types/cookie_io_functions_t.h \
  /usr/include/bits/stdio_lim.h /usr/include/bits/floatn.h \
  /usr/include/bits/floatn-common.h /usr/include/bits/stdio.h \
+ /home/yfozekosh/temp/kaufbot/src/../third_party/cjson/cJSON.h \
  /usr/include/stdlib.h /usr/include/bits/waitflags.h \
  /usr/include/bits/waitstatus.h /usr/include/sys/types.h \
  /usr/include/bits/types/clock_t.h /usr/include/bits/types/clockid_t.h \

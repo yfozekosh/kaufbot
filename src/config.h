@@ -2,6 +2,27 @@
 #define CONFIG_H
 
 #include <stdint.h>
+#include <stdio.h>
+
+/* ── Logging macros ───────────────────────────────────────────────────────── */
+
+#ifndef LOG_LEVEL
+#define LOG_LEVEL 0  /* 0=DEBUG, 1=INFO, 2=WARN, 3=ERROR */
+#endif
+
+#define LOG_DEBUG(fmt, ...) \
+    do { if (LOG_LEVEL <= 0) fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__); } while (0)
+
+#define LOG_INFO(fmt, ...) \
+    do { if (LOG_LEVEL <= 1) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__); } while (0)
+
+#define LOG_WARN(fmt, ...) \
+    do { if (LOG_LEVEL <= 2) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__); } while (0)
+
+#define LOG_ERROR(fmt, ...) \
+    do { if (LOG_LEVEL <= 3) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__); } while (0)
+
+/* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define MAX_ALLOWED_USERS 32
 #define MAX_PATH_LEN      512

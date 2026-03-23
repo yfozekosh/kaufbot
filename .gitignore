@@ -1,0 +1,58 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+*.app
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.key
+
+# Runtime data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Third party (if not committed)
+third_party/*/build/
+third_party/*/dist/
+
+# Test artifacts
+*.gcno
+*.gcda
+coverage/
