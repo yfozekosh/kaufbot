@@ -101,9 +101,9 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t *digest)
     uint8_t bc[8];
     for (int i=7;i>=0;i--) { bc[i]=(uint8_t)(bit_count&0xff); bit_count>>=8; }
     sha256_update(ctx, bc, 8);
-    for (int i=0;i<32;i++)
-        for (int j=0;j<8;j++)
-            digest[i+j*4]=(ctx->state[j]>>(24-i*8))&0xff;
+    for (int j=0;j<8;j++)
+        for (int i=0;i<4;i++)
+            digest[j*4+i]=(ctx->state[j]>>(24-i*8))&0xff;
 }
 
 void storage_sha256_hex(const uint8_t *data, size_t len, char *out)
@@ -293,4 +293,68 @@ static const StorageBackendOps local_ops = {
 StorageBackend *storage_backend_local_open(const Config *cfg)
 {
     return local_ops.open(cfg);
+}
+
+/* ── Backward compatibility wrappers for tests ───────────────────────────── */
+
+static LocalStorage g_test_storage;
+static int g_test_storage_init = 0;
+
+static void ensure_test_storage(const char *path)
+{
+    if (!g_test_storage_init) {
+        snprintf(g_test_storage.base_path, sizeof(g_test_storage.base_path), "%s", path);
+        g_test_storage_init = 1;
+    }
+}
+
+int storage_ensure_dirs(const char *base_path)
+{
+    ensure_test_storage(base_path);
+    struct stat st;
+    if (stat(base_path, &st) == 0) return 0;
+
+    char *path = strdup(base_path);
+    if (!path) return -1;
+
+    char *p = path;
+    if (*p == '/') p++;
+
+    while (*p) {
+        while (*p && *p != '/') p++;
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+                free(path);
+                return -1;
+            }
+            *p = '/';
+            p++;
+        }
+    }
+    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+        free(path);
+        return -1;
+    }
+    free(path);
+    return 0;
+}
+
+int storage_save_file(const char *base_path, const char *filename,
+                      const uint8_t *data, size_t len)
+{
+    ensure_test_storage(base_path);
+    char full_path[MAX_PATH_LEN * 2];
+    snprintf(full_path, sizeof(full_path), "%s/%s", base_path, filename);
+
+    FILE *f = fopen(full_path, "wb");
+    if (!f) return -1;
+    size_t written = fwrite(data, 1, len, f);
+    fclose(f);
+    return (written == len) ? 0 : -1;
+}
+
+int storage_save_text(const char *base_path, const char *filename, const char *text)
+{
+    return storage_save_file(base_path, filename, (const uint8_t *)text, strlen(text));
 }
