@@ -208,10 +208,38 @@ Your editor's clangd extension will pick it up. The `.clangd` config handles cJS
 ├── run.sh                  # run script
 ├── CMakeLists.txt          # build configuration
 ├── Dockerfile              # multi-stage Docker build
-├── RULES.md                # coding conventions
-├── CODE_SMELLS.md          # code quality audit
-└── NEXT_STEPS.md           # improvement roadmap
+└── RULES.md                # coding conventions
 ```
+
+### Pushing via Docker (separate GitHub identity)
+
+If the host machine's SSH key is linked to a different GitHub user, push from a disposable container with its own deploy key.
+
+```bash
+# 1. Generate a deploy key in the host home directory (not ~/.ssh)
+ssh-keygen -t ed25519 -f ~/github_deploy_key -N ""
+
+# 2. Add the public key to GitHub → Settings → SSH keys (with write access)
+cat ~/github_deploy_key.pub
+
+# 3. Push from an Alpine container using the deploy key
+docker run --rm --network host \
+  -v "$(pwd)":/repo \
+  -v ~/github_deploy_key:/tmp/deploy_key:ro \
+  -w /repo \
+  alpine:latest sh -c '
+    apk add --no-cache git openssh-client > /dev/null 2>&1 &&
+    mkdir -p /root/.ssh &&
+    cp /tmp/deploy_key /root/.ssh/id_ed25519 &&
+    chmod 600 /root/.ssh/id_ed25519 &&
+    git config --global user.email "your@email.com" &&
+    git config --global user.name "Your Name" &&
+    git config --global --add safe.directory /repo &&
+    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" git push origin master
+  '
+```
+
+> **Why `--network host`?** GitHub SSH (port 22) may be unreachable from Docker's default bridge network on some setups.
 
 ### Adding a new backend
 
