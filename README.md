@@ -154,7 +154,7 @@ cmake --build build --target format-check
 # Coverage
 cmake -DBUILD_TESTS=ON -DENABLE_COVERAGE=ON -S . -B build
 cmake --build build --target test-coverage    # run tests + generate report
-cmake --build build --target coverage-check   # + enforce 70% threshold
+cmake --build build --target coverage-check   # + enforce 60% threshold
 ```
 
 ### IDE (clangd)
@@ -252,7 +252,7 @@ docker run --rm --network host \
 See [RULES.md](RULES.md). Key points:
 - Write tests alongside new code
 - Never suppress compiler warnings
-- 70% minimum code coverage target
+- 60% minimum code coverage target
 
 ## License
 

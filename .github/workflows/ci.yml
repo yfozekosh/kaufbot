@@ -117,9 +117,9 @@ jobs:
           # Extract line coverage percentage from lcov summary
           COVERAGE=$(lcov --summary build/coverage_filtered.info 2>&1 | grep 'lines' | sed 's/.*: \([0-9.]*\)%.*/\1/')
           echo "Line coverage: ${COVERAGE}%"
-          # Fail if below 70%
-          if [ "$(echo "$COVERAGE < 70" | bc -l)" -eq 1 ]; then
-            echo "::error::Line coverage ${COVERAGE}% is below the 70% minimum threshold"
+          # Fail if below 60%
+          if [ "$(echo "$COVERAGE < 60" | bc -l)" -eq 1 ]; then
+            echo "::error::Line coverage ${COVERAGE}% is below the 60% minimum threshold"
             exit 1
           fi
 

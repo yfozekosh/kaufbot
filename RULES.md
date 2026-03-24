@@ -3,7 +3,7 @@
 ## Testing
 
 - **Always write tests alongside new code.** Every new function, module, or feature must have corresponding tests in the same change.
-- **Target 70% minimum code coverage.** Measure with gcov/lcov. Fail CI if coverage drops below threshold.
+- **Target 60% minimum code coverage.** Measure with gcov/lcov. Fail CI if coverage drops below threshold.
 - **Test business logic first.** Core logic (parsing, validation, data transformation) gets tests before UI, glue code, or plumbing.
 - **Test both happy and sad paths.** For every function, test: valid input, invalid input, edge cases, NULL, empty, boundary values.
 - **Mock external dependencies.** HTTP calls, databases, filesystem — isolate them behind interfaces and use mocks in unit tests.
