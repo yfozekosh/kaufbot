@@ -165,6 +165,40 @@ static void local_close(StorageBackend *backend) {
     free(backend);
 }
 
+static int mkdir_p(const char *path) {
+    char *buf = strdup(path);
+    if (!buf)
+        return -1;
+
+    char *p = buf;
+    if (*p == '/')
+        p++;
+
+    while (*p) {
+        while (*p && *p != '/')
+            p++;
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(buf, 0755) != 0 && errno != EEXIST) {
+                LOG_ERROR("mkdir failed for %s: %s", buf, strerror(errno));
+                free(buf);
+                return -1;
+            }
+            LOG_DEBUG("created directory: %s", buf);
+            *p = '/';
+            p++;
+        }
+    }
+    if (mkdir(buf, 0755) != 0 && errno != EEXIST) {
+        LOG_ERROR("mkdir failed for %s: %s", buf, strerror(errno));
+        free(buf);
+        return -1;
+    }
+    LOG_DEBUG("created directory: %s", buf);
+    free(buf);
+    return 0;
+}
+
 static int local_ensure_dirs(StorageBackend *backend) {
     LocalStorage *storage = (LocalStorage *)backend->internal;
     const char *base_path = storage->base_path;
@@ -176,38 +210,9 @@ static int local_ensure_dirs(StorageBackend *backend) {
     }
 
     LOG_INFO("creating storage directory: %s", base_path);
-    char *path = strdup(base_path);
-    if (!path) {
-        LOG_ERROR("failed to allocate memory for path");
+    if (mkdir_p(base_path) != 0)
         return -1;
-    }
 
-    char *p = path;
-    if (*p == '/')
-        p++;
-
-    while (*p) {
-        while (*p && *p != '/')
-            p++;
-        if (*p == '/') {
-            *p = '\0';
-            if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-                LOG_ERROR("mkdir failed for %s: %s", path, strerror(errno));
-                free(path);
-                return -1;
-            }
-            LOG_DEBUG("created directory: %s", path);
-            *p = '/';
-            p++;
-        }
-    }
-    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-        LOG_ERROR("mkdir failed for %s: %s", path, strerror(errno));
-        free(path);
-        return -1;
-    }
-    LOG_DEBUG("created directory: %s", path);
-    free(path);
     LOG_INFO("storage directory created successfully");
     return 0;
 }

@@ -47,6 +47,52 @@ char *strip_markdown_json(char *raw) {
     return start;
 }
 
+static cJSON *gemini_check_error(cJSON *json) {
+    cJSON *err_obj = cJSON_GetObjectItem(json, "error");
+    if (err_obj) {
+        cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
+        LOG_ERROR("API error: %s", (msg && cJSON_IsString(msg)) ? msg->valuestring : "unknown");
+        return NULL;
+    }
+
+    cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
+    if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
+        LOG_ERROR("no candidates in response");
+        return NULL;
+    }
+
+    cJSON *cand0 = cJSON_GetArrayItem(candidates, 0);
+    if (!cand0) {
+        LOG_ERROR("candidates[0] is NULL");
+        return NULL;
+    }
+
+    cJSON *cont = cJSON_GetObjectItem(cand0, "content");
+    if (!cont) {
+        LOG_ERROR("content missing in candidate");
+        return NULL;
+    }
+
+    cJSON *parts = cJSON_GetObjectItem(cont, "parts");
+    if (!cJSON_IsArray(parts) || cJSON_GetArraySize(parts) == 0) {
+        LOG_ERROR("no parts in response");
+        return NULL;
+    }
+
+    cJSON *part0 = cJSON_GetArrayItem(parts, 0);
+    if (!part0) {
+        LOG_ERROR("parts[0] is NULL");
+        return NULL;
+    }
+
+    cJSON *text = cJSON_GetObjectItem(part0, "text");
+    if (!cJSON_IsString(text)) {
+        LOG_ERROR("no text in response part");
+        return NULL;
+    }
+    return text;
+}
+
 char *gemini_parse_api_response(const char *api_json) {
     if (!api_json || api_json[0] == '\0')
         return NULL;
@@ -57,52 +103,8 @@ char *gemini_parse_api_response(const char *api_json) {
         return NULL;
     }
 
-    cJSON *err_obj = cJSON_GetObjectItem(json, "error");
-    if (err_obj) {
-        cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        LOG_ERROR("API error: %s", (msg && cJSON_IsString(msg)) ? msg->valuestring : "unknown");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    cJSON *candidates = cJSON_GetObjectItem(json, "candidates");
-    if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        LOG_ERROR("no candidates in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *cand0 = cJSON_GetArrayItem(candidates, 0);
-    if (!cand0) {
-        LOG_ERROR("candidates[0] is NULL");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *cont = cJSON_GetObjectItem(cand0, "content");
-    if (!cont) {
-        LOG_ERROR("content missing in candidate");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *parts = cJSON_GetObjectItem(cont, "parts");
-    if (!cJSON_IsArray(parts) || cJSON_GetArraySize(parts) == 0) {
-        LOG_ERROR("no parts in response");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *part0 = cJSON_GetArrayItem(parts, 0);
-    if (!part0) {
-        LOG_ERROR("parts[0] is NULL");
-        cJSON_Delete(json);
-        return NULL;
-    }
-    cJSON *text = cJSON_GetObjectItem(part0, "text");
-    if (!cJSON_IsString(text)) {
-        LOG_ERROR("no text in response part");
-        cJSON_Delete(json);
-        return NULL;
-    }
-
-    char *result = strdup(text->valuestring);
+    cJSON *text = gemini_check_error(json);
+    char *result = text ? strdup(text->valuestring) : NULL;
     cJSON_Delete(json);
     return result;
 }

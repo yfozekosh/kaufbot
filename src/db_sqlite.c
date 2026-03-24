@@ -244,6 +244,57 @@ static int sqlite_mark_ocr_done(DBBackend *backend, int64_t id, const char *ocr_
 
 /* ── mark parsing done ────────────────────────────────────────────────────── */
 
+static int sqlite_check_parsed_exists(sqlite3 *conn, int64_t file_id) {
+    const char *sql = "SELECT id FROM parsed_receipts WHERE file_id = ?";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare check_parsing: %s", sqlite3_errmsg(conn));
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, file_id);
+    rc = sqlite3_step(stmt);
+    int exists = (rc == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+static int sqlite_update_parsed(sqlite3 *conn, int64_t file_id, const char *parsed_json,
+                                const char *now) {
+    const char *sql = "UPDATE parsed_receipts SET parsed_json=?, updated_at=? WHERE file_id=?";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare update_parsing: %s", sqlite3_errmsg(conn));
+        return -1;
+    }
+    sqlite3_bind_text(stmt, 1, parsed_json, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, now, -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 3, file_id);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE) ? 0 : -1;
+}
+
+static int sqlite_insert_parsed(sqlite3 *conn, int64_t file_id, const char *parsed_json,
+                                const char *now) {
+    const char *sql = "INSERT INTO parsed_receipts (file_id, parsed_json, created_at, updated_at)"
+                      " VALUES (?, ?, ?, ?)";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare insert_parsing: %s", sqlite3_errmsg(conn));
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, file_id);
+    sqlite3_bind_text(stmt, 2, parsed_json, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, now, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, now, -1, SQLITE_STATIC);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE) ? 0 : -1;
+}
+
 static int sqlite_mark_parsing_done(DBBackend *backend, int64_t file_id, const char *parsed_json) {
     SQLiteDB *db = (SQLiteDB *)backend->internal;
     char now[DB_DATE_LEN];
@@ -251,50 +302,16 @@ static int sqlite_mark_parsing_done(DBBackend *backend, int64_t file_id, const c
 
     LOG_DEBUG("marking parsing done for file id=%lld", (long long)file_id);
 
-    /* Check if already exists */
-    const char *check_sql = "SELECT id FROM parsed_receipts WHERE file_id = ?";
-    sqlite3_stmt *check_stmt;
-    int rc = sqlite3_prepare_v2(db->conn, check_sql, -1, &check_stmt, NULL);
-    if (rc != SQLITE_OK) {
-        LOG_ERROR("prepare check_parsing: %s", sqlite3_errmsg(db->conn));
+    int exists = sqlite_check_parsed_exists(db->conn, file_id);
+    if (exists < 0)
         return -1;
-    }
-    sqlite3_bind_int64(check_stmt, 1, file_id);
-    rc = sqlite3_step(check_stmt);
-    int exists = (rc == SQLITE_ROW);
-    sqlite3_finalize(check_stmt);
+
     LOG_DEBUG("parsed receipt %s for file id=%lld", exists ? "exists" : "new", (long long)file_id);
 
-    const char *sql;
-    sqlite3_stmt *stmt;
-    if (exists) {
-        sql = "UPDATE parsed_receipts SET parsed_json=?, updated_at=? WHERE file_id=?";
-        rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
-        if (rc != SQLITE_OK) {
-            LOG_ERROR("prepare update_parsing: %s", sqlite3_errmsg(db->conn));
-            return -1;
-        }
-        sqlite3_bind_text(stmt, 1, parsed_json, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, now, -1, SQLITE_STATIC);
-        sqlite3_bind_int64(stmt, 3, file_id);
-    } else {
-        sql = "INSERT INTO parsed_receipts (file_id, parsed_json, created_at, updated_at)"
-              " VALUES (?, ?, ?, ?)";
-        rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
-        if (rc != SQLITE_OK) {
-            LOG_ERROR("prepare insert_parsing: %s", sqlite3_errmsg(db->conn));
-            return -1;
-        }
-        sqlite3_bind_int64(stmt, 1, file_id);
-        sqlite3_bind_text(stmt, 2, parsed_json, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, now, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 4, now, -1, SQLITE_STATIC);
-    }
+    int rc = exists ? sqlite_update_parsed(db->conn, file_id, parsed_json, now)
+                    : sqlite_insert_parsed(db->conn, file_id, parsed_json, now);
 
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
+    if (rc != 0) {
         LOG_ERROR("parsing error: %s", sqlite3_errmsg(db->conn));
         return -1;
     }

@@ -86,62 +86,37 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char
 
 /* ── pipeline ─────────────────────────────────────────────────────────────── */
 
-void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
-                           size_t data_len, char *reply_buf, size_t reply_buf_len) {
-    if (!p || !original_name || !data || !reply_buf || reply_buf_len == 0) {
-        LOG_ERROR("processor_handle_file: invalid parameters");
-        return;
-    }
-
-    LOG_INFO("processing file: %s (%zu bytes)", original_name, data_len);
-
-    /* Step 1: Compute SHA-256 hash */
-    char hash[SHA256_HEX_LEN];
-    storage_sha256_hex(data, data_len, hash);
-
-    /* Step 2: Check for duplicate */
-    FileRecord existing;
-    int found = db_backend_find_by_hash(p->db, hash, &existing);
-
-    if (found == 0) {
-        LOG_WARN("duplicate file detected");
-        int should_continue = p->dup_strategy(&existing, reply_buf, reply_buf_len);
-        if (!should_continue)
-            return;
-    } else if (found == -1) {
-        LOG_ERROR("database error while checking for duplicates");
-        snprintf(reply_buf, reply_buf_len, "Database error while checking for duplicates.");
-        return;
-    }
-
-    /* Step 3: Generate saved filename */
+static int processor_save_file(Processor *p, const char *original_name, const uint8_t *data,
+                               size_t data_len, const char *hash, FileRecord *rec, char *reply_buf,
+                               size_t reply_buf_len) {
     const char *ext = strrchr(original_name, '.');
     char saved_name[MAX_FILENAME];
     storage_gen_filename(ext ? ext : "", saved_name, sizeof(saved_name));
 
-    /* Step 4: Save file via storage backend */
     if (storage_backend_save_file(p->storage, saved_name, data, data_len) != 0) {
         LOG_ERROR("failed to save file to storage");
         snprintf(reply_buf, reply_buf_len, "Failed to save file to storage.");
-        return;
+        return -1;
     }
 
-    /* Step 5: Insert record into DB */
-    FileRecord rec;
-    memset(&rec, 0, sizeof(rec));
-    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", original_name);
-    rec.file_size_bytes = (int64_t)data_len;
-    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", saved_name);
-    snprintf(rec.file_hash, DB_HASH_LEN, "%s", hash);
-    rec.is_ocr_processed = 0;
+    memset(rec, 0, sizeof(*rec));
+    snprintf(rec->original_file_name, DB_ORIG_NAME_LEN, "%s", original_name);
+    rec->file_size_bytes = (int64_t)data_len;
+    snprintf(rec->saved_file_name, DB_FILENAME_LEN, "%s", saved_name);
+    snprintf(rec->file_hash, DB_HASH_LEN, "%s", hash);
+    rec->is_ocr_processed = 0;
 
-    if (db_backend_insert(p->db, &rec) != 0) {
+    if (db_backend_insert(p->db, rec) != 0) {
         LOG_ERROR("database error while saving file record");
         snprintf(reply_buf, reply_buf_len, "Database error while saving file record.");
-        return;
+        return -1;
     }
+    return 0;
+}
 
-    /* Step 6: Run OCR via Gemini */
+static char *processor_run_ocr(Processor *p, const char *original_name, const uint8_t *data,
+                               size_t data_len, const char *saved_name, const FileRecord *rec,
+                               char *reply_buf, size_t reply_buf_len) {
     LOG_INFO("sending file to Gemini for OCR");
     char *ocr_text = gemini_extract_text(p->gemini, data, data_len, original_name);
 
@@ -152,10 +127,9 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                  "OCR failed - file is saved, OCR can be retried later.\n"
                  "Original: %s  |  Size: %zu bytes",
                  saved_name, original_name, data_len);
-        return;
+        return NULL;
     }
 
-    /* Step 7: Save OCR result */
     char ocr_filename[MAX_FILENAME];
     storage_ocr_filename(saved_name, ocr_filename, sizeof(ocr_filename));
 
@@ -163,12 +137,16 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
         LOG_ERROR("failed to write OCR file %s", ocr_filename);
     }
 
-    /* Step 8: Update DB record */
-    if (db_backend_mark_ocr_done(p->db, rec.id, ocr_filename) != 0) {
-        LOG_ERROR("failed to mark OCR done in DB for file id=%lld", (long long)rec.id);
+    if (db_backend_mark_ocr_done(p->db, rec->id, ocr_filename) != 0) {
+        LOG_ERROR("failed to mark OCR done in DB for file id=%lld", (long long)rec->id);
     }
+    return ocr_text;
+}
 
-    /* Step 9: Parse receipt via Gemini */
+static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *ocr_text,
+                                     const char *saved_name, const char *ocr_filename,
+                                     const char *original_name, size_t data_len, char *reply_buf,
+                                     size_t reply_buf_len) {
     LOG_INFO("sending OCR text to Gemini for parsing");
     char *parsed_json = gemini_parse_receipt(p->gemini, ocr_text);
 
@@ -180,16 +158,60 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                  "Parsing failed - OCR data is saved, parsing can be retried later.\n"
                  "Original: %s  |  Size: %zu bytes",
                  saved_name, ocr_filename, original_name, data_len);
+        return NULL;
+    }
+
+    if (db_backend_mark_parsing_done(p->db, file_id, parsed_json) != 0) {
+        LOG_ERROR("failed to save parsed receipt");
+    }
+    return parsed_json;
+}
+
+void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
+                           size_t data_len, char *reply_buf, size_t reply_buf_len) {
+    if (!p || !original_name || !data || !reply_buf || reply_buf_len == 0) {
+        LOG_ERROR("processor_handle_file: invalid parameters");
+        return;
+    }
+
+    LOG_INFO("processing file: %s (%zu bytes)", original_name, data_len);
+
+    char hash[SHA256_HEX_LEN];
+    storage_sha256_hex(data, data_len, hash);
+
+    FileRecord existing;
+    int found = db_backend_find_by_hash(p->db, hash, &existing);
+    if (found == 0) {
+        LOG_WARN("duplicate file detected");
+        if (!p->dup_strategy(&existing, reply_buf, reply_buf_len))
+            return;
+    } else if (found == -1) {
+        LOG_ERROR("database error while checking for duplicates");
+        snprintf(reply_buf, reply_buf_len, "Database error while checking for duplicates.");
+        return;
+    }
+
+    FileRecord rec;
+    if (processor_save_file(p, original_name, data, data_len, hash, &rec, reply_buf,
+                            reply_buf_len) != 0)
+        return;
+
+    char *ocr_text = processor_run_ocr(p, original_name, data, data_len, rec.saved_file_name, &rec,
+                                       reply_buf, reply_buf_len);
+    if (!ocr_text)
+        return;
+
+    char ocr_filename[MAX_FILENAME];
+    storage_ocr_filename(rec.saved_file_name, ocr_filename, sizeof(ocr_filename));
+
+    char *parsed_json =
+        processor_parse_receipt(p, rec.id, ocr_text, rec.saved_file_name, ocr_filename,
+                                original_name, data_len, reply_buf, reply_buf_len);
+    if (!parsed_json) {
         free(ocr_text);
         return;
     }
 
-    /* Step 10: Save parsed JSON to DB */
-    if (db_backend_mark_parsing_done(p->db, rec.id, parsed_json) != 0) {
-        LOG_ERROR("failed to save parsed receipt");
-    }
-
-    /* Step 11: Build reply */
     cJSON *json = cJSON_Parse(parsed_json);
     if (!json) {
         LOG_ERROR("cJSON_Parse failed - invalid JSON: %.200s", parsed_json);
@@ -198,16 +220,13 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                  "OCR result saved: %s\n"
                  "Receipt parsed and saved to database.\n"
                  "Original: %s  |  Size: %zu bytes",
-                 saved_name, ocr_filename, original_name, data_len);
-        free(ocr_text);
-        free(parsed_json);
-        return;
+                 rec.saved_file_name, ocr_filename, original_name, data_len);
+    } else {
+        processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
+                                 original_name, data_len, json);
+        cJSON_Delete(json);
     }
 
-    processor_build_reply_ok(reply_buf, reply_buf_len, saved_name, ocr_filename, original_name,
-                             data_len, json);
-
-    cJSON_Delete(json);
     free(ocr_text);
     free(parsed_json);
 }
