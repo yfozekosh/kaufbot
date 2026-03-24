@@ -12,43 +12,49 @@ Telegram bot that processes receipt photos — extracts text via OCR, parses lin
 - Pluggable database backends (SQLite, PostgreSQL)
 - Docker support (static binary, scratch image)
 
-## Architecture
-
-```
-┌─────────┐     ┌──────────┐     ┌─────────┐
-│ Telegram │────▶│   Bot    │────▶│ Gemini  │  (OCR + parsing)
-│  API     │◀────│          │◀────│  API    │
-└─────────┘     └────┬─────┘     └─────────┘
-                     │
-              ┌──────┴──────┐
-              │  Processor  │  (dedup, save, parse)
-              └──────┬──────┘
-               ┌─────┴─────┐
-               │           │
-         ┌─────┴──┐   ┌────┴────┐
-         │Storage │   │Database │
-         │Backend │   │Backend  │
-         └────────┘   └─────────┘
-         local/        sqlite/
-         supabase      postgres
-```
-
 ## Quick Start
 
-### 1. Install dependencies
-
 ```bash
+git clone git@github.com:yfozekosh/kaufbot.git && cd kaufbot
 sudo dnf install cmake gcc libcurl-devel sqlite-devel postgresql-devel
+cp .env.example .env   # edit with your credentials
+./build.sh
+./test.sh
+source .env && ./build/tgbot
 ```
 
-Using a different distro? I'm sorry to hear that. You're on your own, and frankly, not welcome here. But if you insist, try `apt install cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev` or whatever your package manager calls things this week. Don't @ me.
+Debian/Ubuntu: `apt install cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev`
 
-### 2. Configure
+## Receipt Processing Flow
 
-```bash
-cp .env.example .env
-# Edit .env with your credentials
+```mermaid
+sequenceDiagram
+    participant User
+    participant Telegram
+    participant Bot
+    participant Storage
+    participant DB
+    participant Gemini
+
+    User->>Telegram: Send receipt photo
+    Telegram->>Bot: Photo update (file_id)
+    Bot->>Telegram: Download file
+    Telegram-->>Bot: Image bytes
+    Bot->>Storage: Compute SHA-256 hash
+    Bot->>DB: Find by hash
+    DB-->>Bot: Not found
+    Bot->>Storage: Save image file
+    Bot->>DB: Insert record (ocr_pending)
+    Bot->>Gemini: OCR request (image)
+    Gemini-->>Bot: Extracted text + parsed JSON
+    Bot->>DB: Mark OCR done, save parsed receipt
+    Bot->>User: Reply with receipt summary
+    Note over Bot,DB: If hash already exists:<br/>skip OCR, reply duplicate
 ```
+
+## Configuration
+
+Copy `.env.example` to `.env` and set:
 
 Required:
 | Variable | Description |
@@ -77,36 +83,6 @@ Optional (database):
 | `POSTGRES_DB` | — | Database name |
 | `POSTGRES_USER` | — | Database user |
 | `POSTGRES_PASSWORD` | — | PostgreSQL password |
-
-### 3. Build & Run
-
-```bash
-./build.sh
-source .env && ./build/tgbot
-```
-
-### 4. Test
-
-```bash
-./test.sh
-```
-
-5 test modules, 85 test cases:
-
-| Module | Tests | What |
-|--------|-------|------|
-| `test_storage` | 19 | SHA-256, filenames, MIME types, file I/O |
-| `test_db` | 10 | SQLite CRUD, OCR/parsing state |
-| `test_json` | 19 | JSON parsing, Gemini response handling |
-| `test_config` | 15 | Config loading, validation, edge cases |
-| `test_edge_cases` | 22 | Boundary values, unicode, special chars |
-
-### 5. Docker
-
-```bash
-docker build -t kaufbot .
-docker run -v /path/to/data:/data kaufbot
-```
 
 ## Usage
 
