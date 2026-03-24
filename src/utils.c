@@ -46,12 +46,13 @@ void growbuf_free(GrowBuf *buf) {
 static const char B64_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 char *base64_encode(const uint8_t *src, size_t len) {
-    size_t out_len = ((len + 2) / 3) * 4 + 1;
+    size_t out_len = (((len + 2) / 3) * 4) + 1;
     char *out = malloc(out_len);
     if (!out)
         return NULL;
 
-    size_t i, j;
+    size_t i;
+    size_t j;
     for (i = 0, j = 0; i < len;) {
         uint32_t a = i < len ? src[i++] : 0;
         uint32_t b = i < len ? src[i++] : 0;
@@ -87,7 +88,7 @@ char *url_percent_encode(const char *src) {
 
     size_t len = strlen(src);
     /* Worst case: every char becomes %XX (3 bytes) */
-    char *out = malloc(len * 3 + 1);
+    char *out = malloc((len * 3) + 1);
     if (!out)
         return NULL;
 

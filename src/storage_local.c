@@ -42,11 +42,22 @@ static const uint32_t K[64] = {
 #define s1(x)        (ROR32(x, 17) ^ ROR32(x, 19) ^ ((x) >> 10))
 
 static void sha256_transform(SHA256_CTX *ctx, const uint8_t *data) {
-    uint32_t a, b, c, d, e, f, g, h, t1, t2, m[64];
+    uint32_t a;
+    uint32_t b;
+    uint32_t c;
+    uint32_t d;
+    uint32_t e;
+    uint32_t f;
+    uint32_t g;
+    uint32_t h;
+    uint32_t t1;
+    uint32_t t2;
+    uint32_t m[64];
     int i;
     for (i = 0; i < 16; i++) {
-        m[i] = ((uint32_t)data[(size_t)i * 4] << 24) | ((uint32_t)data[(size_t)i * 4 + 1] << 16) |
-               ((uint32_t)data[(size_t)i * 4 + 2] << 8) | (uint32_t)data[(size_t)i * 4 + 3];
+        size_t base = (size_t)i * 4;
+        m[i] = ((uint32_t)data[base] << 24) | ((uint32_t)data[base + 1] << 16) |
+               ((uint32_t)data[base + 2] << 8) | (uint32_t)data[base + 3];
     }
     for (; i < 64; i++)
         m[i] = s1(m[i - 2]) + m[i - 7] + s0(m[i - 15]) + m[i - 16];
@@ -119,7 +130,7 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t *digest) {
     sha256_update(ctx, bc, 8);
     for (int j = 0; j < 8; j++)
         for (int i = 0; i < 4; i++)
-            digest[(size_t)j * 4 + i] = (ctx->state[j] >> (24 - i * 8)) & 0xff;
+            digest[((size_t)j * 4) + i] = (ctx->state[j] >> (24 - i * 8)) & 0xff;
 }
 
 void storage_sha256_hex(const uint8_t *data, size_t len, char *out) {
@@ -130,7 +141,7 @@ void storage_sha256_hex(const uint8_t *data, size_t len, char *out) {
     sha256_update(&ctx, data, len);
     sha256_final(&ctx, digest);
     for (int i = 0; i < 32; i++)
-        snprintf(out + (size_t)i * 2, 3, "%02x", digest[i]);
+        snprintf(out + ((size_t)i * 2), 3, "%02x", digest[i]);
     out[64] = '\0';
     LOG_DEBUG("SHA256: %s", out);
 }
