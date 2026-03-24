@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master, main]
 
+env:
+  FORCE_NODE24: true
+
 jobs:
   build-and-test:
     name: Build & Test
@@ -14,7 +17,10 @@ jobs:
       matrix:
         postgres: [with-postgres, without-postgres]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Use system CMake
+        run: sudo rm -rf /usr/local/bin/cmake /usr/local/share/cmake* /usr/local/doc/cmake /usr/local/man/man1/cmake*
 
       - name: Install dependencies (without PostgreSQL)
         if: matrix.postgres == 'without-postgres'
@@ -41,7 +47,10 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Use system CMake
+        run: sudo rm -rf /usr/local/bin/cmake /usr/local/share/cmake* /usr/local/doc/cmake /usr/local/man/man1/cmake*
 
       - name: Install dependencies
         run: |
@@ -61,7 +70,10 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Use system CMake
+        run: sudo rm -rf /usr/local/bin/cmake /usr/local/share/cmake* /usr/local/doc/cmake /usr/local/man/man1/cmake*
 
       - name: Install clang-format
         run: |
@@ -78,7 +90,10 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Use system CMake
+        run: sudo rm -rf /usr/local/bin/cmake /usr/local/share/cmake* /usr/local/doc/cmake /usr/local/man/man1/cmake*
 
       - name: Install dependencies
         run: |
