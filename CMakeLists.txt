@@ -147,7 +147,16 @@ if(CLANG_TIDY_EXE)
     add_custom_target(lint
         COMMAND ${CLANG_TIDY_EXE}
             -p ${CMAKE_BINARY_DIR}
-            ${SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/main.c
+            ${CMAKE_SOURCE_DIR}/src/config.c
+            ${CMAKE_SOURCE_DIR}/src/gemini.c
+            ${CMAKE_SOURCE_DIR}/src/processor.c
+            ${CMAKE_SOURCE_DIR}/src/bot.c
+            ${CMAKE_SOURCE_DIR}/src/utils.c
+            ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+            ${CMAKE_SOURCE_DIR}/src/storage_local.c
+            ${CMAKE_SOURCE_DIR}/src/db_postgres.c
+            ${CMAKE_SOURCE_DIR}/src/storage_supabase.c
         COMMENT "Running clang-tidy on source files"
         VERBATIM
     )
