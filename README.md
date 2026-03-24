@@ -25,6 +25,13 @@ source .env && ./build/tgbot
 
 Debian/Ubuntu: `apt install cmake gcc libcurl4-openssl-dev libsqlite3-dev libpq-dev`
 
+## Documentation
+
+- [Components](docs/components.md) — component interaction diagram
+- [Modules](docs/modules.md) — source module dependency graph
+- [Backends](docs/backends.md) — storage/database backend interfaces and data types
+- [Deployment](docs/deployment.md) — Docker and bare metal deployment options
+
 ## Receipt Processing Flow
 
 ```mermaid
