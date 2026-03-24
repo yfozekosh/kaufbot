@@ -12,10 +12,11 @@ typedef struct {
     /* Lifecycle */
     StorageBackend *(*open)(const Config *cfg);
     void (*close)(StorageBackend *storage);
-    
+
     /* Operations */
     int (*ensure_dirs)(StorageBackend *storage);
-    int (*save_file)(StorageBackend *storage, const char *filename, const uint8_t *data, size_t len);
+    int (*save_file)(StorageBackend *storage, const char *filename, const uint8_t *data,
+                     size_t len);
     int (*save_text)(StorageBackend *storage, const char *filename, const char *text);
     int (*file_exists)(StorageBackend *storage, const char *filename);
     char *(*get_public_url)(StorageBackend *storage, const char *filename);
@@ -23,7 +24,7 @@ typedef struct {
 
 struct StorageBackendImpl {
     const StorageBackendOps *ops;
-    void *internal;  /* Backend-specific data */
+    void *internal; /* Backend-specific data */
 };
 
 /* ── Backend implementations ──────────────────────────────────────────────── */
@@ -36,8 +37,7 @@ StorageBackend *storage_backend_supabase_open(const Config *cfg);
 
 /* ── Factory ──────────────────────────────────────────────────────────────── */
 
-static inline StorageBackend *storage_backend_open(const Config *cfg)
-{
+static inline StorageBackend *storage_backend_open(const Config *cfg) {
 #ifdef HAVE_POSTGRES
     if (cfg->storage_backend == STORAGE_BACKEND_SUPABASE) {
         return storage_backend_supabase_open(cfg);
@@ -50,47 +50,43 @@ static inline StorageBackend *storage_backend_open(const Config *cfg)
     }
 }
 
-static inline void storage_backend_close(StorageBackend *storage)
-{
+static inline void storage_backend_close(StorageBackend *storage) {
     if (storage && storage->ops && storage->ops->close) {
         storage->ops->close(storage);
     }
 }
 
-static inline int storage_backend_ensure_dirs(StorageBackend *storage)
-{
+static inline int storage_backend_ensure_dirs(StorageBackend *storage) {
     if (storage && storage->ops && storage->ops->ensure_dirs) {
         return storage->ops->ensure_dirs(storage);
     }
     return -1;
 }
 
-static inline int storage_backend_save_file(StorageBackend *storage, const char *filename, const uint8_t *data, size_t len)
-{
+static inline int storage_backend_save_file(StorageBackend *storage, const char *filename,
+                                            const uint8_t *data, size_t len) {
     if (storage && storage->ops && storage->ops->save_file) {
         return storage->ops->save_file(storage, filename, data, len);
     }
     return -1;
 }
 
-static inline int storage_backend_save_text(StorageBackend *storage, const char *filename, const char *text)
-{
+static inline int storage_backend_save_text(StorageBackend *storage, const char *filename,
+                                            const char *text) {
     if (storage && storage->ops && storage->ops->save_text) {
         return storage->ops->save_text(storage, filename, text);
     }
     return -1;
 }
 
-static inline int storage_backend_file_exists(StorageBackend *storage, const char *filename)
-{
+static inline int storage_backend_file_exists(StorageBackend *storage, const char *filename) {
     if (storage && storage->ops && storage->ops->file_exists) {
         return storage->ops->file_exists(storage, filename);
     }
     return -1;
 }
 
-static inline char *storage_backend_get_public_url(StorageBackend *storage, const char *filename)
-{
+static inline char *storage_backend_get_public_url(StorageBackend *storage, const char *filename) {
     if (storage && storage->ops && storage->ops->get_public_url) {
         return storage->ops->get_public_url(storage, filename);
     }

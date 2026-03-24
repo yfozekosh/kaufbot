@@ -4,6 +4,7 @@ Checks: >
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
+  -bugprone-macro-parentheses,
   concurrency-*,
   memory-*,
   -memory-no-malloc,

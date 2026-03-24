@@ -1,25 +1,23 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
 
+#include "bot.h"
 #include "config.h"
 #include "db_backend.h"
-#include "storage_backend.h"
 #include "gemini.h"
 #include "processor.h"
-#include "bot.h"
+#include "storage_backend.h"
 
 static TgBot *g_bot = NULL;
 
-static void on_signal(int sig)
-{
+static void on_signal(int sig) {
     (void)sig;
-    LOG_INFO("signal received, shutting down...");
-    if (g_bot) bot_stop(g_bot);
+    if (g_bot)
+        bot_stop(g_bot); // NOLINT (atomic_store is async-signal-safe)
 }
 
-int main(void)
-{
+int main(void) {
     LOG_INFO("bot starting up");
 
     Config cfg;
@@ -75,7 +73,7 @@ int main(void)
     }
 
     g_bot = bot;
-    signal(SIGINT,  on_signal);
+    signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
     bot_start(bot);

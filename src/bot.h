@@ -2,8 +2,8 @@
 #define BOT_H
 
 #include "config.h"
-#include "processor.h"
 #include "db_backend.h"
+#include "processor.h"
 
 typedef struct TgBot TgBot;
 

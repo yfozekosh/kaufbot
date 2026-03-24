@@ -16,22 +16,22 @@
 
 typedef struct {
     int64_t id;
-    char    original_file_name[DB_ORIG_NAME_LEN];
+    char original_file_name[DB_ORIG_NAME_LEN];
     int64_t file_size_bytes;
-    char    saved_file_name[DB_FILENAME_LEN];
-    char    file_hash[DB_HASH_LEN];
-    int     is_ocr_processed;
-    char    ocr_file_name[DB_OCR_FILENAME_LEN];
-    char    created_at[DB_DATE_LEN];
-    char    updated_at[DB_DATE_LEN];
+    char saved_file_name[DB_FILENAME_LEN];
+    char file_hash[DB_HASH_LEN];
+    int is_ocr_processed;
+    char ocr_file_name[DB_OCR_FILENAME_LEN];
+    char created_at[DB_DATE_LEN];
+    char updated_at[DB_DATE_LEN];
 } FileRecord;
 
 typedef struct {
     int64_t id;
     int64_t file_id;
-    char    parsed_json[DB_JSON_LEN];
-    char    created_at[DB_DATE_LEN];
-    char    updated_at[DB_DATE_LEN];
+    char parsed_json[DB_JSON_LEN];
+    char created_at[DB_DATE_LEN];
+    char updated_at[DB_DATE_LEN];
 } ParsedReceipt;
 
 typedef void (*db_list_cb)(const FileRecord *rec, void *userdata);

@@ -1,19 +1,18 @@
 /* ── Additional edge case and integration tests ──────────────────────────── */
 
-#include "test_runner.h"
-#include "test_helpers.h"
-#include "storage.h"
-#include "db_backend.h"
 #include "../third_party/cjson/cJSON.h"
-#include <string.h>
-#include <stdlib.h>
+#include "db_backend.h"
+#include "storage.h"
+#include "test_helpers.h"
+#include "test_runner.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 
 /* ── Storage edge cases ──────────────────────────────────────────────────── */
 
-TEST_CASE(storage_sha256_binary_data)
-{
+TEST_CASE(storage_sha256_binary_data) {
     char hash[SHA256_HEX_LEN];
     const uint8_t data[] = {0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD};
     storage_sha256_hex(data, sizeof(data), hash);
@@ -22,29 +21,25 @@ TEST_CASE(storage_sha256_binary_data)
 
     for (int i = 0; i < 64; i++) {
         char c = hash[i];
-        ASSERT_TRUE((c >= '0' && c <= '9') ||
-                    (c >= 'a' && c <= 'f') ||
-                    (c >= 'A' && c <= 'F'));
+        ASSERT_TRUE((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
     }
 
     TEST_PASS();
 }
 
-TEST_CASE(storage_sha256_consistency)
-{
+TEST_CASE(storage_sha256_consistency) {
     char hash1[SHA256_HEX_LEN];
     char hash2[SHA256_HEX_LEN];
     const uint8_t data[] = "consistent test";
 
-    storage_sha256_hex(data, strlen((char*)data), hash1);
-    storage_sha256_hex(data, strlen((char*)data), hash2);
+    storage_sha256_hex(data, strlen((char *)data), hash1);
+    storage_sha256_hex(data, strlen((char *)data), hash2);
 
     ASSERT_STR_EQ(hash1, hash2);
     TEST_PASS();
 }
 
-TEST_CASE(storage_mime_all_extensions)
-{
+TEST_CASE(storage_mime_all_extensions) {
     ASSERT_STR_EQ("image/jpeg", storage_mime_type("file.JPG"));
     ASSERT_STR_EQ("image/jpeg", storage_mime_type("file.Jpeg"));
     ASSERT_STR_EQ("image/png", storage_mime_type("file.Png"));
@@ -57,8 +52,7 @@ TEST_CASE(storage_mime_all_extensions)
     TEST_PASS();
 }
 
-TEST_CASE(storage_ocr_filename_long_name)
-{
+TEST_CASE(storage_ocr_filename_long_name) {
     char ocr_filename[MAX_FILENAME];
     const char *long_name = "upload_2024-01-01_12_00_00_very_long_name.jpg";
     storage_ocr_filename(long_name, ocr_filename, sizeof(ocr_filename));
@@ -67,8 +61,7 @@ TEST_CASE(storage_ocr_filename_long_name)
     TEST_PASS();
 }
 
-TEST_CASE(storage_save_empty_file)
-{
+TEST_CASE(storage_save_empty_file) {
     const char *test_dir = "/tmp/kaufbot_empty_file";
     const char *test_file = "empty.bin";
     const uint8_t data[1] = {0};
@@ -94,8 +87,7 @@ TEST_CASE(storage_save_empty_file)
     TEST_PASS();
 }
 
-TEST_CASE(storage_save_large_file)
-{
+TEST_CASE(storage_save_large_file) {
     const char *test_dir = "/tmp/kaufbot_large_file";
     const char *test_file = "large.bin";
 
@@ -126,8 +118,7 @@ TEST_CASE(storage_save_large_file)
     TEST_PASS();
 }
 
-TEST_CASE(storage_text_empty)
-{
+TEST_CASE(storage_text_empty) {
     const char *test_dir = "/tmp/kaufbot_empty_text";
     const char *test_file = "empty.txt";
 
@@ -141,8 +132,7 @@ TEST_CASE(storage_text_empty)
     TEST_PASS();
 }
 
-TEST_CASE(storage_text_multiline)
-{
+TEST_CASE(storage_text_multiline) {
     const char *test_dir = "/tmp/kaufbot_multiline";
     const char *test_file = "multiline.txt";
     const char *text = "Line 1\nLine 2\nLine 3\n";
@@ -171,8 +161,7 @@ TEST_CASE(storage_text_multiline)
 
 /* ── Database edge cases (using backend API) ─────────────────────────────── */
 
-static DBBackend *open_test_db(const char *path)
-{
+static DBBackend *open_test_db(const char *path) {
     system("rm -f /tmp/kaufbot_edge.db");
     system("rm -f /tmp/kaufbot_long.db");
     system("rm -f /tmp/kaufbot_zero.db");
@@ -182,8 +171,7 @@ static DBBackend *open_test_db(const char *path)
     return test_db_open_sqlite(path);
 }
 
-TEST_CASE(db_empty_filename)
-{
+TEST_CASE(db_empty_filename) {
     DBBackend *db = open_test_db("/tmp/kaufbot_edge.db");
     ASSERT_NOT_NULL(db);
 
@@ -202,8 +190,7 @@ TEST_CASE(db_empty_filename)
     TEST_PASS();
 }
 
-TEST_CASE(db_very_long_filename)
-{
+TEST_CASE(db_very_long_filename) {
     DBBackend *db = open_test_db("/tmp/kaufbot_long.db");
     ASSERT_NOT_NULL(db);
 
@@ -227,8 +214,7 @@ TEST_CASE(db_very_long_filename)
     TEST_PASS();
 }
 
-TEST_CASE(db_zero_file_size)
-{
+TEST_CASE(db_zero_file_size) {
     DBBackend *db = open_test_db("/tmp/kaufbot_zero.db");
     ASSERT_NOT_NULL(db);
 
@@ -248,14 +234,14 @@ TEST_CASE(db_zero_file_size)
     TEST_PASS();
 }
 
-TEST_CASE(db_special_characters_in_filename)
-{
+TEST_CASE(db_special_characters_in_filename) {
     DBBackend *db = open_test_db("/tmp/kaufbot_special.db");
     ASSERT_NOT_NULL(db);
 
     FileRecord rec;
     memset(&rec, 0, sizeof(rec));
-    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", "file with spaces & special (chars).jpg");
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s",
+             "file with spaces & special (chars).jpg");
     rec.file_size_bytes = 100;
     snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", "special.jpg");
     snprintf(rec.file_hash, DB_HASH_LEN, "%s", "special_hash");
@@ -272,14 +258,15 @@ TEST_CASE(db_special_characters_in_filename)
     TEST_PASS();
 }
 
-TEST_CASE(db_unicode_in_filename)
-{
+TEST_CASE(db_unicode_in_filename) {
     DBBackend *db = open_test_db("/tmp/kaufbot_unicode.db");
     ASSERT_NOT_NULL(db);
 
     FileRecord rec;
     memset(&rec, 0, sizeof(rec));
-    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", "\xd1\x84\xd0\xb0\xd0\xb9\xd0\xbb_\xe6\x96\x87\xe4\xbb\xb6_\xd9\x85\xd9\x84\xd9\x81.jpg");
+    snprintf(
+        rec.original_file_name, DB_ORIG_NAME_LEN, "%s",
+        "\xd1\x84\xd0\xb0\xd0\xb9\xd0\xbb_\xe6\x96\x87\xe4\xbb\xb6_\xd9\x85\xd9\x84\xd9\x81.jpg");
     rec.file_size_bytes = 100;
     snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", "unicode.jpg");
     snprintf(rec.file_hash, DB_HASH_LEN, "%s", "unicode_hash");
@@ -296,8 +283,7 @@ TEST_CASE(db_unicode_in_filename)
     TEST_PASS();
 }
 
-TEST_CASE(db_multiple_parsed_receipts)
-{
+TEST_CASE(db_multiple_parsed_receipts) {
     DBBackend *db = open_test_db("/tmp/kaufbot_multi_parse.db");
     ASSERT_NOT_NULL(db);
 
@@ -341,8 +327,7 @@ TEST_CASE(db_multiple_parsed_receipts)
 
 /* ── JSON edge cases ─────────────────────────────────────────────────────── */
 
-TEST_CASE(json_empty_object)
-{
+TEST_CASE(json_empty_object) {
     cJSON *json = cJSON_Parse("{}");
     ASSERT_NOT_NULL(json);
     ASSERT_TRUE(cJSON_IsObject(json));
@@ -351,8 +336,7 @@ TEST_CASE(json_empty_object)
     TEST_PASS();
 }
 
-TEST_CASE(json_empty_array)
-{
+TEST_CASE(json_empty_array) {
     cJSON *json = cJSON_Parse("[]");
     ASSERT_NOT_NULL(json);
     ASSERT_TRUE(cJSON_IsArray(json));
@@ -361,8 +345,7 @@ TEST_CASE(json_empty_array)
     TEST_PASS();
 }
 
-TEST_CASE(json_deeply_nested)
-{
+TEST_CASE(json_deeply_nested) {
     const char *json_str = "{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":123}}}}}";
     cJSON *json = cJSON_Parse(json_str);
     ASSERT_NOT_NULL(json);
@@ -380,8 +363,7 @@ TEST_CASE(json_deeply_nested)
     TEST_PASS();
 }
 
-TEST_CASE(json_boolean_values)
-{
+TEST_CASE(json_boolean_values) {
     const char *json_str = "{\"is_true\":true,\"is_false\":false}";
     cJSON *json = cJSON_Parse(json_str);
     ASSERT_NOT_NULL(json);
@@ -396,8 +378,7 @@ TEST_CASE(json_boolean_values)
     TEST_PASS();
 }
 
-TEST_CASE(json_number_types)
-{
+TEST_CASE(json_number_types) {
     const char *json_str = "{\"int\":42,\"negative\":-17,\"float\":3.14159,\"scientific\":1.23e10}";
     cJSON *json = cJSON_Parse(json_str);
     ASSERT_NOT_NULL(json);
@@ -416,8 +397,7 @@ TEST_CASE(json_number_types)
     TEST_PASS();
 }
 
-TEST_CASE(json_array_iteration)
-{
+TEST_CASE(json_array_iteration) {
     const char *json_str = "[1,2,3,4,5]";
     cJSON *json = cJSON_Parse(json_str);
     ASSERT_NOT_NULL(json);
@@ -433,8 +413,7 @@ TEST_CASE(json_array_iteration)
     TEST_PASS();
 }
 
-TEST_CASE(json_special_characters_in_string)
-{
+TEST_CASE(json_special_characters_in_string) {
     const char *json_str = "{\"text\":\"hello\\nworld\\ttab\\\"quote\\\\backslash\"}";
     cJSON *json = cJSON_Parse(json_str);
     ASSERT_NOT_NULL(json);
@@ -447,16 +426,14 @@ TEST_CASE(json_special_characters_in_string)
     TEST_PASS();
 }
 
-TEST_CASE(json_receipt_validation)
-{
-    const char *valid =
-        "{"
-        "\"store_information\":{\"name\":\"REWE\",\"address\":\"Berlin\"},"
-        "\"line_items\":[{\"original_name\":\"Milk\",\"price\":1.99,\"amount\":1}],"
-        "\"total_sum\":1.99,"
-        "\"number_of_items\":1,"
-        "\"other\":{}"
-        "}";
+TEST_CASE(json_receipt_validation) {
+    const char *valid = "{"
+                        "\"store_information\":{\"name\":\"REWE\",\"address\":\"Berlin\"},"
+                        "\"line_items\":[{\"original_name\":\"Milk\",\"price\":1.99,\"amount\":1}],"
+                        "\"total_sum\":1.99,"
+                        "\"number_of_items\":1,"
+                        "\"other\":{}"
+                        "}";
 
     cJSON *json = cJSON_Parse(valid);
     ASSERT_NOT_NULL(json);

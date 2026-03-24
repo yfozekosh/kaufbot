@@ -1,42 +1,38 @@
 #include "processor.h"
-#include "storage.h"
-#include "gemini.h"
-#include "config.h"
 #include "../third_party/cjson/cJSON.h"
+#include "config.h"
+#include "gemini.h"
+#include "storage.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct Processor {
-    DBBackend        *db;
-    StorageBackend   *storage;
-    GeminiClient     *gemini;
+    DBBackend *db;
+    StorageBackend *storage;
+    GeminiClient *gemini;
     DuplicateStrategyFn dup_strategy;
 };
 
 /* ── built-in duplicate strategy ─────────────────────────────────────────── */
 
-int strategy_notify_and_skip(const FileRecord *existing,
-                              char *reply_buf, size_t buf_len)
-{
+int strategy_notify_and_skip(const FileRecord *existing, char *reply_buf, size_t buf_len) {
     LOG_INFO("duplicate detected: %s", existing->saved_file_name);
     snprintf(reply_buf, buf_len,
              "Duplicate detected - this file was already uploaded.\n"
              "Saved as: %s\n"
              "Uploaded: %s\n"
              "OCR: %s",
-             existing->saved_file_name,
-             existing->created_at,
+             existing->saved_file_name, existing->created_at,
              existing->is_ocr_processed ? "done" : "not processed");
     return 0;
 }
 
 /* ── constructor / destructor ─────────────────────────────────────────────── */
 
-Processor *processor_new(DBBackend *db, StorageBackend *storage,
-                         void *gemini, DuplicateStrategyFn dup_strategy)
-{
+Processor *processor_new(DBBackend *db, StorageBackend *storage, void *gemini,
+                         DuplicateStrategyFn dup_strategy) {
     if (!db || !storage || !gemini) {
         LOG_ERROR("processor_new: required parameter is NULL");
         return NULL;
@@ -47,34 +43,30 @@ Processor *processor_new(DBBackend *db, StorageBackend *storage,
         LOG_ERROR("failed to allocate processor");
         return NULL;
     }
-    p->db           = db;
-    p->storage      = storage;
-    p->gemini       = (GeminiClient *)gemini;
+    p->db = db;
+    p->storage = storage;
+    p->gemini = (GeminiClient *)gemini;
     p->dup_strategy = dup_strategy ? dup_strategy : strategy_notify_and_skip;
     return p;
 }
 
-void processor_free(Processor *p)
-{
+void processor_free(Processor *p) {
     free(p);
 }
 
 /* ── pipeline sub-steps ──────────────────────────────────────────────────── */
 
-static void processor_build_reply_ok(char *reply_buf, size_t buf_len,
-                                      const char *saved_name,
-                                      const char *ocr_filename,
-                                      const char *original_name,
-                                      size_t data_len,
-                                      cJSON *json)
-{
+static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
+                                     const char *ocr_filename, const char *original_name,
+                                     size_t data_len, cJSON *json) {
     cJSON *store_info = cJSON_GetObjectItem(json, "store_information");
     cJSON *store_name = store_info ? cJSON_GetObjectItem(store_info, "name") : NULL;
-    cJSON *total_sum  = cJSON_GetObjectItem(json, "total_sum");
+    cJSON *total_sum = cJSON_GetObjectItem(json, "total_sum");
     cJSON *line_items = cJSON_GetObjectItem(json, "line_items");
 
     const char *name = (store_name && cJSON_IsString(store_name) && store_name->valuestring)
-                       ? store_name->valuestring : "Unknown";
+                           ? store_name->valuestring
+                           : "Unknown";
     double total = (total_sum && cJSON_IsNumber(total_sum)) ? total_sum->valuedouble : 0;
     int item_count = (line_items && cJSON_IsArray(line_items)) ? cJSON_GetArraySize(line_items) : 0;
 
@@ -94,11 +86,8 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len,
 
 /* ── pipeline ─────────────────────────────────────────────────────────────── */
 
-void processor_handle_file(Processor     *p,
-                           const char    *original_name,
-                           const uint8_t *data, size_t data_len,
-                           char          *reply_buf, size_t reply_buf_len)
-{
+void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
+                           size_t data_len, char *reply_buf, size_t reply_buf_len) {
     if (!p || !original_name || !data || !reply_buf || reply_buf_len == 0) {
         LOG_ERROR("processor_handle_file: invalid parameters");
         return;
@@ -117,11 +106,11 @@ void processor_handle_file(Processor     *p,
     if (found == 0) {
         LOG_WARN("duplicate file detected");
         int should_continue = p->dup_strategy(&existing, reply_buf, reply_buf_len);
-        if (!should_continue) return;
+        if (!should_continue)
+            return;
     } else if (found == -1) {
         LOG_ERROR("database error while checking for duplicates");
-        snprintf(reply_buf, reply_buf_len,
-                 "Database error while checking for duplicates.");
+        snprintf(reply_buf, reply_buf_len, "Database error while checking for duplicates.");
         return;
     }
 
@@ -215,9 +204,8 @@ void processor_handle_file(Processor     *p,
         return;
     }
 
-    processor_build_reply_ok(reply_buf, reply_buf_len,
-                             saved_name, ocr_filename,
-                             original_name, data_len, json);
+    processor_build_reply_ok(reply_buf, reply_buf_len, saved_name, ocr_filename, original_name,
+                             data_len, json);
 
     cJSON_Delete(json);
     free(ocr_text);

@@ -1,11 +1,11 @@
-#include "db_backend.h"
 #include "config.h"
+#include "db_backend.h"
 
+#include <libpq-fe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <libpq-fe.h>
 
 /* Forward declaration */
 static const DBBackendOps postgres_ops;
@@ -16,15 +16,13 @@ typedef struct {
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
-static void now_iso8601(char *out, size_t len)
-{
+static void now_iso8601(char *out, size_t len) {
     time_t t = time(NULL);
     struct tm *tm = gmtime(&t);
     strftime(out, len, "%Y-%m-%dT%H:%M:%SZ", tm);
 }
 
-static int db_exec(PGconn *conn, const char *sql)
-{
+static int db_exec(PGconn *conn, const char *sql) {
     PGresult *res = PQexec(conn, sql);
     ExecStatusType status = PQresultStatus(res);
     if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
@@ -39,17 +37,15 @@ static int db_exec(PGconn *conn, const char *sql)
 
 /* ── open / migrate ───────────────────────────────────────────────────────── */
 
-static DBBackend *postgres_open(const Config *cfg)
-{
-    LOG_INFO("opening PostgreSQL database: %s@%s:%s/%s", 
-             cfg->postgres_user, cfg->postgres_host, cfg->postgres_port, cfg->postgres_db);
-    
+static DBBackend *postgres_open(const Config *cfg) {
+    LOG_INFO("opening PostgreSQL database: %s@%s:%s/%s", cfg->postgres_user, cfg->postgres_host,
+             cfg->postgres_port, cfg->postgres_db);
+
     /* Build connection string */
     char conninfo[2048];
-    snprintf(conninfo, sizeof(conninfo),
-             "host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
-             cfg->postgres_host, cfg->postgres_port, cfg->postgres_db,
-             cfg->postgres_user, cfg->postgres_password, cfg->postgres_ssl_mode);
+    snprintf(conninfo, sizeof(conninfo), "host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
+             cfg->postgres_host, cfg->postgres_port, cfg->postgres_db, cfg->postgres_user,
+             cfg->postgres_password, cfg->postgres_ssl_mode);
 
     PGconn *conn = PQconnectdb(conninfo);
     if (PQstatus(conn) != CONNECTION_OK) {
@@ -108,9 +104,9 @@ static DBBackend *postgres_open(const Config *cfg)
     return backend;
 }
 
-static void postgres_close(DBBackend *backend)
-{
-    if (!backend) return;
+static void postgres_close(DBBackend *backend) {
+    if (!backend)
+        return;
     PostgresDB *db = (PostgresDB *)backend->internal;
     if (db && db->conn) {
         PQfinish(db->conn);
@@ -121,23 +117,22 @@ static void postgres_close(DBBackend *backend)
 
 /* ── find by hash ─────────────────────────────────────────────────────────── */
 
-static int postgres_find_by_hash(DBBackend *backend, const char *hash, FileRecord *out)
-{
+static int postgres_find_by_hash(DBBackend *backend, const char *hash, FileRecord *out) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     LOG_DEBUG("looking up file by hash: %.16s...", hash);
-    
-    const char *sql =
-        "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
-        "       file_hash, is_ocr_processed, ocr_file_name,"
-        "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
-        "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
-        " FROM files WHERE file_hash = $1 LIMIT 1";
 
-    const char *params[1] = { hash };
+    const char *sql = "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
+                      "       file_hash, is_ocr_processed, ocr_file_name,"
+                      "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
+                      "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+                      " FROM files WHERE file_hash = $1 LIMIT 1";
+
+    const char *params[1] = {hash};
     PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     ExecStatusType status = PQresultStatus(res);
     if (status != PGRES_TUPLES_OK) {
-        LOG_ERROR("find_by_hash query error (status=%d): %s", (int)status, PQerrorMessage(db->conn));
+        LOG_ERROR("find_by_hash query error (status=%d): %s", (int)status,
+                  PQerrorMessage(db->conn));
         LOG_ERROR("find_by_hash sqlstate: %s", PQresultErrorField(res, PG_DIAG_SQLSTATE));
         PQclear(res);
         return -1;
@@ -161,33 +156,33 @@ static int postgres_find_by_hash(DBBackend *backend, const char *hash, FileRecor
     snprintf(out->updated_at, DB_DATE_LEN, "%s", PQgetvalue(res, 0, 8));
 
     PQclear(res);
-    LOG_DEBUG("file found: id=%lld, ocr=%s", (long long)out->id, out->is_ocr_processed ? "done" : "pending");
+    LOG_DEBUG("file found: id=%lld, ocr=%s", (long long)out->id,
+              out->is_ocr_processed ? "done" : "pending");
     return 0;
 }
 
 /* ── insert ───────────────────────────────────────────────────────────────── */
 
-static int postgres_insert(DBBackend *backend, FileRecord *rec)
-{
+static int postgres_insert(DBBackend *backend, FileRecord *rec) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     char now[DB_DATE_LEN];
     now_iso8601(now, sizeof(now));
 
-    LOG_DEBUG("inserting file record: %s (%lld bytes)", rec->original_file_name, (long long)rec->file_size_bytes);
-    
-    const char *sql =
-        "INSERT INTO files"
-        " (original_file_name, file_size_bytes, saved_file_name, file_hash,"
-        "  is_ocr_processed, ocr_file_name, created_at, updated_at)"
-        " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
-        " RETURNING id";
+    LOG_DEBUG("inserting file record: %s (%lld bytes)", rec->original_file_name,
+              (long long)rec->file_size_bytes);
+
+    const char *sql = "INSERT INTO files"
+                      " (original_file_name, file_size_bytes, saved_file_name, file_hash,"
+                      "  is_ocr_processed, ocr_file_name, created_at, updated_at)"
+                      " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+                      " RETURNING id";
 
     const char *params[8];
     char size_str[32];
     char is_ocr_str[2];
     snprintf(size_str, sizeof(size_str), "%lld", (long long)rec->file_size_bytes);
     snprintf(is_ocr_str, sizeof(is_ocr_str), "%d", rec->is_ocr_processed);
-    
+
     params[0] = rec->original_file_name;
     params[1] = size_str;
     params[2] = rec->saved_file_name;
@@ -208,21 +203,19 @@ static int postgres_insert(DBBackend *backend, FileRecord *rec)
     snprintf(rec->created_at, DB_DATE_LEN, "%s", now);
     snprintf(rec->updated_at, DB_DATE_LEN, "%s", now);
     PQclear(res);
-    
+
     LOG_DEBUG("file record inserted with id=%lld", (long long)rec->id);
     return 0;
 }
 
 /* ── mark OCR done ────────────────────────────────────────────────────────── */
 
-static int postgres_mark_ocr_done(DBBackend *backend, int64_t id, const char *ocr_file_name)
-{
+static int postgres_mark_ocr_done(DBBackend *backend, int64_t id, const char *ocr_file_name) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     LOG_DEBUG("marking OCR done for file id=%lld: %s", (long long)id, ocr_file_name);
-    
-    const char *sql =
-        "UPDATE files SET is_ocr_processed=TRUE, ocr_file_name=$1, updated_at=NOW()"
-        " WHERE id=$2";
+
+    const char *sql = "UPDATE files SET is_ocr_processed=TRUE, ocr_file_name=$1, updated_at=NOW()"
+                      " WHERE id=$2";
 
     const char *params[2];
     char id_str[32];
@@ -237,23 +230,22 @@ static int postgres_mark_ocr_done(DBBackend *backend, int64_t id, const char *oc
         return -1;
     }
     PQclear(res);
-    
+
     LOG_DEBUG("OCR marked done for file id=%lld", (long long)id);
     return 0;
 }
 
 /* ── mark parsing done ────────────────────────────────────────────────────── */
 
-static int postgres_mark_parsing_done(DBBackend *backend, int64_t file_id, const char *parsed_json)
-{
+static int postgres_mark_parsing_done(DBBackend *backend, int64_t file_id,
+                                      const char *parsed_json) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     LOG_DEBUG("marking parsing done for file id=%lld", (long long)file_id);
-    
-    const char *sql =
-        "INSERT INTO parsed_receipts (file_id, parsed_json, created_at, updated_at)"
-        " VALUES ($1, $2::jsonb, NOW(), NOW())"
-        " ON CONFLICT (file_id) DO UPDATE"
-        " SET parsed_json = $2::jsonb, updated_at = NOW()";
+
+    const char *sql = "INSERT INTO parsed_receipts (file_id, parsed_json, created_at, updated_at)"
+                      " VALUES ($1, $2::jsonb, NOW(), NOW())"
+                      " ON CONFLICT (file_id) DO UPDATE"
+                      " SET parsed_json = $2::jsonb, updated_at = NOW()";
 
     const char *params[2];
     char id_str[32];
@@ -268,27 +260,25 @@ static int postgres_mark_parsing_done(DBBackend *backend, int64_t file_id, const
         return -1;
     }
     PQclear(res);
-    
+
     LOG_DEBUG("parsing saved for file id=%lld", (long long)file_id);
     return 0;
 }
 
 /* ── get parsed receipt ───────────────────────────────────────────────────── */
 
-static int postgres_get_parsed_receipt(DBBackend *backend, int64_t file_id, ParsedReceipt *out)
-{
+static int postgres_get_parsed_receipt(DBBackend *backend, int64_t file_id, ParsedReceipt *out) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     LOG_DEBUG("getting parsed receipt for file id=%lld", (long long)file_id);
-    
-    const char *sql =
-        "SELECT id, file_id, parsed_json::text,"
-        "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
-        "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
-        " FROM parsed_receipts WHERE file_id = $1 LIMIT 1";
+
+    const char *sql = "SELECT id, file_id, parsed_json::text,"
+                      "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
+                      "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+                      " FROM parsed_receipts WHERE file_id = $1 LIMIT 1";
 
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "%lld", (long long)file_id);
-    const char *params[1] = { id_str };
+    const char *params[1] = {id_str};
 
     PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -317,17 +307,15 @@ static int postgres_get_parsed_receipt(DBBackend *backend, int64_t file_id, Pars
 
 /* ── list ─────────────────────────────────────────────────────────────────── */
 
-static int postgres_list(DBBackend *backend, db_list_cb cb, void *userdata)
-{
+static int postgres_list(DBBackend *backend, db_list_cb cb, void *userdata) {
     PostgresDB *db = (PostgresDB *)backend->internal;
     LOG_DEBUG("listing all files");
-    
-    const char *sql =
-        "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
-        "       file_hash, is_ocr_processed, ocr_file_name,"
-        "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
-        "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
-        " FROM files ORDER BY created_at DESC";
+
+    const char *sql = "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
+                      "       file_hash, is_ocr_processed, ocr_file_name,"
+                      "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
+                      "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+                      " FROM files ORDER BY created_at DESC";
 
     PGresult *res = PQexec(db->conn, sql);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -361,18 +349,15 @@ static int postgres_list(DBBackend *backend, db_list_cb cb, void *userdata)
 
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
-static const DBBackendOps postgres_ops = {
-    .open              = postgres_open,
-    .close             = postgres_close,
-    .find_by_hash      = postgres_find_by_hash,
-    .insert            = postgres_insert,
-    .mark_ocr_done     = postgres_mark_ocr_done,
-    .mark_parsing_done = postgres_mark_parsing_done,
-    .get_parsed_receipt = postgres_get_parsed_receipt,
-    .list              = postgres_list
-};
+static const DBBackendOps postgres_ops = {.open = postgres_open,
+                                          .close = postgres_close,
+                                          .find_by_hash = postgres_find_by_hash,
+                                          .insert = postgres_insert,
+                                          .mark_ocr_done = postgres_mark_ocr_done,
+                                          .mark_parsing_done = postgres_mark_parsing_done,
+                                          .get_parsed_receipt = postgres_get_parsed_receipt,
+                                          .list = postgres_list};
 
-DBBackend *db_backend_postgres_open(const Config *cfg)
-{
+DBBackend *db_backend_postgres_open(const Config *cfg) {
     return postgres_ops.open(cfg);
 }

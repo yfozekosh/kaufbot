@@ -1,23 +1,21 @@
 /* ── Database module tests ────────────────────────────────────────────────── */
 
-#include "test_runner.h"
-#include "test_helpers.h"
 #include "db.h"
+#include "test_helpers.h"
+#include "test_runner.h"
 #include <string.h>
 #include <unistd.h>
 
 static DBBackend *g_test_db = NULL;
 static const char *g_test_db_path = "/tmp/kaufbot_test.db";
 
-static void setup_db(void)
-{
+static void setup_db(void) {
     system("rm -f /tmp/kaufbot_test.db");
     g_test_db = test_db_open_sqlite(g_test_db_path);
     ASSERT_NOT_NULL(g_test_db);
 }
 
-static void teardown_db(void)
-{
+static void teardown_db(void) {
     if (g_test_db) {
         test_db_close(g_test_db);
         g_test_db = NULL;
@@ -26,8 +24,7 @@ static void teardown_db(void)
 }
 
 /* Test database open/close */
-TEST_CASE(db_open_close)
-{
+TEST_CASE(db_open_close) {
     setup_db();
     ASSERT_NOT_NULL(g_test_db);
     ASSERT_NOT_NULL(g_test_db->ops);
@@ -35,8 +32,7 @@ TEST_CASE(db_open_close)
     TEST_PASS();
 }
 
-TEST_CASE(db_open_existing)
-{
+TEST_CASE(db_open_existing) {
     setup_db();
     test_db_close(g_test_db);
     g_test_db = NULL;
@@ -49,8 +45,7 @@ TEST_CASE(db_open_existing)
 }
 
 /* Test insert and find by hash */
-TEST_CASE(db_insert_and_find)
-{
+TEST_CASE(db_insert_and_find) {
     setup_db();
 
     FileRecord rec;
@@ -77,8 +72,7 @@ TEST_CASE(db_insert_and_find)
     TEST_PASS();
 }
 
-TEST_CASE(db_find_not_found)
-{
+TEST_CASE(db_find_not_found) {
     setup_db();
 
     /* Insert a record */
@@ -101,8 +95,7 @@ TEST_CASE(db_find_not_found)
 }
 
 /* Test duplicate hash detection */
-TEST_CASE(db_duplicate_hash)
-{
+TEST_CASE(db_duplicate_hash) {
     setup_db();
 
     /* Insert first record */
@@ -131,8 +124,7 @@ TEST_CASE(db_duplicate_hash)
 }
 
 /* Test mark OCR done */
-TEST_CASE(db_mark_ocr_done)
-{
+TEST_CASE(db_mark_ocr_done) {
     setup_db();
 
     /* Insert record */
@@ -160,8 +152,7 @@ TEST_CASE(db_mark_ocr_done)
 }
 
 /* Test mark parsing done */
-TEST_CASE(db_mark_parsing_done)
-{
+TEST_CASE(db_mark_parsing_done) {
     setup_db();
 
     /* Insert record */
@@ -184,8 +175,7 @@ TEST_CASE(db_mark_parsing_done)
 }
 
 /* Test get parsed receipt not found */
-TEST_CASE(db_get_parsed_receipt_not_found)
-{
+TEST_CASE(db_get_parsed_receipt_not_found) {
     setup_db();
 
     /* Insert record but don't parse */
@@ -208,8 +198,7 @@ TEST_CASE(db_get_parsed_receipt_not_found)
 }
 
 /* Test get parsed receipt */
-TEST_CASE(db_get_parsed_receipt)
-{
+TEST_CASE(db_get_parsed_receipt) {
     setup_db();
 
     /* Insert and parse record */
@@ -236,8 +225,7 @@ TEST_CASE(db_get_parsed_receipt)
 }
 
 /* Test mark parsing done update */
-TEST_CASE(db_mark_parsing_done_update)
-{
+TEST_CASE(db_mark_parsing_done_update) {
     setup_db();
 
     /* Insert and parse record */

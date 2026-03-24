@@ -1,19 +1,19 @@
 #include "gemini.h"
-#include "storage.h"
-#include "config.h"
-#include "utils.h"
 #include "../third_party/cjson/cJSON.h"
+#include "config.h"
+#include "storage.h"
+#include "utils.h"
 
+#include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <curl/curl.h>
 
-#define GEMINI_API_BASE "https://generativelanguage.googleapis.com/v1beta/models"
-#define GEMINI_MAX_API_KEY_LEN  256
-#define GEMINI_MAX_MODEL_LEN    128
-#define GEMINI_URL_BUF_LEN      512
-#define GEMINI_HTTP_TIMEOUT_SECS 120L
+#define GEMINI_API_BASE                  "https://generativelanguage.googleapis.com/v1beta/models"
+#define GEMINI_MAX_API_KEY_LEN           256
+#define GEMINI_MAX_MODEL_LEN             128
+#define GEMINI_URL_BUF_LEN               512
+#define GEMINI_HTTP_TIMEOUT_SECS         120L
 #define GEMINI_HTTP_CONNECT_TIMEOUT_SECS 15L
 
 struct GeminiClient {
@@ -21,32 +21,35 @@ struct GeminiClient {
     char model[GEMINI_MAX_MODEL_LEN];
 };
 
-char *strip_markdown_json(char *raw)
-{
+char *strip_markdown_json(char *raw) {
     char *start = raw;
     if (strncmp(start, "```json", 7) == 0) {
         start += 7;
-        while (*start == '\n' || *start == '\r') start++;
+        while (*start == '\n' || *start == '\r')
+            start++;
     } else if (strncmp(start, "```", 3) == 0) {
         start += 3;
-        while (*start == '\n' || *start == '\r') start++;
+        while (*start == '\n' || *start == '\r')
+            start++;
     }
     char *end = strstr(start, "```");
-    if (end) *end = '\0';
+    if (end)
+        *end = '\0';
 
-    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') start++;
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')
+        start++;
 
     size_t len = strlen(start);
-    while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\t' ||
-                       start[len-1] == '\n' || start[len-1] == '\r')) {
+    while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t' || start[len - 1] == '\n' ||
+                       start[len - 1] == '\r')) {
         start[--len] = '\0';
     }
     return start;
 }
 
-char *gemini_parse_api_response(const char *api_json)
-{
-    if (!api_json || api_json[0] == '\0') return NULL;
+char *gemini_parse_api_response(const char *api_json) {
+    if (!api_json || api_json[0] == '\0')
+        return NULL;
 
     cJSON *json = cJSON_Parse(api_json);
     if (!json) {
@@ -57,8 +60,7 @@ char *gemini_parse_api_response(const char *api_json)
     cJSON *err_obj = cJSON_GetObjectItem(json, "error");
     if (err_obj) {
         cJSON *msg = cJSON_GetObjectItem(err_obj, "message");
-        LOG_ERROR("API error: %s",
-                  (msg && cJSON_IsString(msg)) ? msg->valuestring : "unknown");
+        LOG_ERROR("API error: %s", (msg && cJSON_IsString(msg)) ? msg->valuestring : "unknown");
         cJSON_Delete(json);
         return NULL;
     }
@@ -107,18 +109,19 @@ char *gemini_parse_api_response(const char *api_json)
 
 /* ── OCR prompt ───────────────────────────────────────────────────────────── */
 
-static const char *ocr_prompt(void)
-{
-    return "Extract ALL text from this image or document. This document is a receipt from one of the well-know german supermarkets."
+static const char *ocr_prompt(void) {
+    return "Extract ALL text from this image or document. This document is a receipt from one of "
+           "the well-know german supermarkets."
            "Preserve the original layout and formatting as closely as possible. "
-           "Items on the same line in the image/pdf should stay on the same line in the output text."
-           "If the line starts with the blank text - use spaces to align text with the text position on the image/document."
+           "Items on the same line in the image/pdf should stay on the same line in the output "
+           "text."
+           "If the line starts with the blank text - use spaces to align text with the text "
+           "position on the image/document."
            "If there is no text, respond with: [NO TEXT FOUND]. "
            "Output only the extracted text, nothing else.";
 }
 
-static const char *parse_prompt(void)
-{
+static const char *parse_prompt(void) {
     return "You are an expert German supermarket receipt parsing tool. You are given text "
            "extracted from a receipt photo via OCR. The layout is important, as item "
            "descriptions often span multiple lines.\n\n"
@@ -173,28 +176,27 @@ static const char *parse_prompt(void)
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-GeminiClient *gemini_new(const char *api_key, const char *model)
-{
-    if (!api_key || !model) return NULL;
+GeminiClient *gemini_new(const char *api_key, const char *model) {
+    if (!api_key || !model)
+        return NULL;
 
     GeminiClient *c = calloc(1, sizeof(GeminiClient));
-    if (!c) return NULL;
+    if (!c)
+        return NULL;
     snprintf(c->api_key, GEMINI_MAX_API_KEY_LEN, "%s", api_key);
-    snprintf(c->model,   GEMINI_MAX_MODEL_LEN,   "%s", model);
+    snprintf(c->model, GEMINI_MAX_MODEL_LEN, "%s", model);
     return c;
 }
 
-void gemini_free(GeminiClient *client)
-{
+void gemini_free(GeminiClient *client) {
     free(client);
 }
 
 /* Shared helper to POST a JSON body to Gemini and return the parsed text. */
-static char *gemini_post_and_parse(GeminiClient *client, const char *body)
-{
+static char *gemini_post_and_parse(GeminiClient *client, const char *body) {
     char url[GEMINI_URL_BUF_LEN];
-    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s",
-             GEMINI_API_BASE, client->model, client->api_key);
+    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s", GEMINI_API_BASE, client->model,
+             client->api_key);
     LOG_DEBUG("sending request to Gemini API");
 
     CURL *curl = curl_easy_init();
@@ -212,12 +214,12 @@ static char *gemini_post_and_parse(GeminiClient *client, const char *body)
         return NULL;
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL,            url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,     body);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER,     headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,  growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA,      &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT,        GEMINI_HTTP_TIMEOUT_SECS);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, GEMINI_HTTP_TIMEOUT_SECS);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, GEMINI_HTTP_CONNECT_TIMEOUT_SECS);
 
     CURLcode res = curl_easy_perform(curl);
@@ -244,10 +246,53 @@ static char *gemini_post_and_parse(GeminiClient *client, const char *body)
     return result;
 }
 
-char *gemini_extract_text(GeminiClient *client,
-                          const uint8_t *data, size_t len,
-                          const char *filename)
-{
+static char *gemini_build_body_and_post(GeminiClient *client, cJSON *parts, const char *prompt,
+                                        const char *extra_text) {
+    cJSON *root = cJSON_CreateObject();
+    cJSON *contents = cJSON_AddArrayToObject(root, "contents");
+    cJSON *content = cJSON_CreateObject();
+    cJSON_AddItemToArray(contents, content);
+    cJSON *p = cJSON_AddArrayToObject(content, "parts");
+
+    /* Copy caller-provided parts */
+    if (parts) {
+        cJSON *part = NULL;
+        cJSON_ArrayForEach(part, parts) {
+            cJSON_AddItemToArray(p, cJSON_Duplicate(part, 1));
+        }
+    }
+
+    /* Prompt text */
+    cJSON *prompt_part = cJSON_CreateObject();
+    cJSON_AddStringToObject(prompt_part, "text", prompt);
+    cJSON_AddItemToArray(p, prompt_part);
+
+    /* Optional extra text (e.g., OCR text for parsing) */
+    if (extra_text) {
+        cJSON *extra = cJSON_CreateObject();
+        cJSON_AddStringToObject(extra, "text", extra_text);
+        cJSON_AddItemToArray(p, extra);
+    }
+
+    cJSON *gen_cfg = cJSON_CreateObject();
+    cJSON_AddNumberToObject(gen_cfg, "temperature", 0);
+    cJSON_AddItemToObject(root, "generationConfig", gen_cfg);
+
+    char *body = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    cJSON_Delete(parts);
+    if (!body) {
+        LOG_ERROR("JSON serialization failed");
+        return NULL;
+    }
+
+    char *result = gemini_post_and_parse(client, body);
+    free(body);
+    return result;
+}
+
+char *gemini_extract_text(GeminiClient *client, const uint8_t *data, size_t len,
+                          const char *filename) {
     LOG_INFO("extracting text from: %s (%zu bytes)", filename, len);
 
     char *b64 = base64_encode(data, len);
@@ -256,75 +301,27 @@ char *gemini_extract_text(GeminiClient *client,
         return NULL;
     }
 
-    cJSON *root     = cJSON_CreateObject();
-    cJSON *contents = cJSON_AddArrayToObject(root, "contents");
-    cJSON *content  = cJSON_CreateObject();
-    cJSON_AddItemToArray(contents, content);
-    cJSON *parts    = cJSON_AddArrayToObject(content, "parts");
-
-    cJSON *part_data  = cJSON_CreateObject();
+    cJSON *parts = cJSON_CreateArray();
+    cJSON *part_data = cJSON_CreateObject();
     cJSON *inline_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(inline_obj, "mime_type", storage_mime_type(filename));
-    cJSON_AddStringToObject(inline_obj, "data",      b64);
+    cJSON_AddStringToObject(inline_obj, "data", b64);
     cJSON_AddItemToObject(part_data, "inline_data", inline_obj);
     cJSON_AddItemToArray(parts, part_data);
     free(b64);
 
-    cJSON *part_text = cJSON_CreateObject();
-    cJSON_AddStringToObject(part_text, "text", ocr_prompt());
-    cJSON_AddItemToArray(parts, part_text);
-
-    cJSON *gen_cfg = cJSON_CreateObject();
-    cJSON_AddNumberToObject(gen_cfg, "temperature", 0);
-    cJSON_AddItemToObject(root, "generationConfig", gen_cfg);
-
-    char *body = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!body) {
-        LOG_ERROR("JSON serialization failed");
-        return NULL;
-    }
-
-    char *result = gemini_post_and_parse(client, body);
-    free(body);
-    if (!result) return NULL;
-
-    LOG_INFO("text extraction successful");
+    char *result = gemini_build_body_and_post(client, parts, ocr_prompt(), NULL);
+    if (result)
+        LOG_INFO("text extraction successful");
     return result;
 }
 
-char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text)
-{
+char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text) {
     LOG_INFO("parsing receipt text (%zu chars)", strlen(ocr_text));
 
-    cJSON *root     = cJSON_CreateObject();
-    cJSON *contents = cJSON_AddArrayToObject(root, "contents");
-    cJSON *content  = cJSON_CreateObject();
-    cJSON_AddItemToArray(contents, content);
-    cJSON *parts    = cJSON_AddArrayToObject(content, "parts");
-
-    cJSON *part_text = cJSON_CreateObject();
-    cJSON_AddStringToObject(part_text, "text", parse_prompt());
-    cJSON_AddItemToArray(parts, part_text);
-
-    cJSON *part_ocr = cJSON_CreateObject();
-    cJSON_AddStringToObject(part_ocr, "text", ocr_text);
-    cJSON_AddItemToArray(parts, part_ocr);
-
-    cJSON *gen_cfg = cJSON_CreateObject();
-    cJSON_AddNumberToObject(gen_cfg, "temperature", 0);
-    cJSON_AddItemToObject(root, "generationConfig", gen_cfg);
-
-    char *body = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!body) {
-        LOG_ERROR("JSON serialization failed");
+    char *raw = gemini_build_body_and_post(client, NULL, parse_prompt(), ocr_text);
+    if (!raw)
         return NULL;
-    }
-
-    char *raw = gemini_post_and_parse(client, body);
-    free(body);
-    if (!raw) return NULL;
 
     char *start = strip_markdown_json(raw);
     char *result = strdup(start);

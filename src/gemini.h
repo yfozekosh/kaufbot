@@ -17,8 +17,7 @@ void gemini_free(GeminiClient *client);
  *
  * On success: returns a heap-allocated NUL-terminated string — caller must free().
  * On error:   returns NULL and writes a message to stderr. */
-char *gemini_extract_text(GeminiClient *client,
-                          const uint8_t *data, size_t len,
+char *gemini_extract_text(GeminiClient *client, const uint8_t *data, size_t len,
                           const char *filename);
 
 /* Send OCR-extracted text to Gemini for receipt parsing.

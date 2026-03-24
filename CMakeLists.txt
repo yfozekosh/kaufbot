@@ -213,8 +213,8 @@ if(ENABLE_COVERAGE AND BUILD_TESTS)
 
     if(LCOV_EXE AND GENHTML_EXE)
         add_custom_target(coverage
-            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --no-external
-            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info
+            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --ignore-errors mismatch
+            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info --ignore-errors unused
             COMMAND ${GENHTML_EXE} coverage_filtered.info --output-directory coverage_report
             COMMENT "Generating code coverage report"
             VERBATIM
@@ -222,8 +222,8 @@ if(ENABLE_COVERAGE AND BUILD_TESTS)
 
         add_custom_target(test-coverage
             COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --no-external
-            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info
+            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --ignore-errors mismatch
+            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info --ignore-errors unused
             COMMAND ${GENHTML_EXE} coverage_filtered.info --output-directory coverage_report
             COMMENT "Running tests and generating coverage report"
             VERBATIM
@@ -231,8 +231,8 @@ if(ENABLE_COVERAGE AND BUILD_TESTS)
 
         add_custom_target(coverage-check
             COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --no-external
-            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info
+            COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR} --output-file coverage.info --ignore-errors mismatch
+            COMMAND ${LCOV_EXE} --remove coverage.info '*/tests/*' '*/third_party/*' --output-file coverage_filtered.info --ignore-errors unused
             COMMAND ${GENHTML_EXE} coverage_filtered.info --output-directory coverage_report
             COMMAND ${CMAKE_COMMAND} -E env bash -c
                 "PERCENT=$$(${LCOV_EXE} --summary coverage_filtered.info 2>&1 | grep lines | sed 's/.*: \\([0-9.]*\\)%.*/\\1/'); \
