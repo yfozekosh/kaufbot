@@ -56,7 +56,7 @@ sequenceDiagram
     Gemini-->>Bot: Extracted text + parsed JSON
     Bot->>DB: Mark OCR done, save parsed receipt
     Bot->>User: Reply with receipt summary
-    Note over Bot,DB: If hash already exists:<br/>skip OCR, reply duplicate
+    Note over Bot,DB: If hash exists: skip OCR, reply duplicate
 ```
 
 ## Configuration

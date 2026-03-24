@@ -5,30 +5,27 @@
 ```mermaid
 graph TB
     subgraph Host
-        ENV[.env file<br/>secrets]
-        DATA[/data volume<br/>files + db]
+        ENV[".env file"]
+        DATA["/data volume"]
     end
 
-    subgraph Container["kaufbot container (scratch)"]
-        BIN[tgbot<br/>static binary]
+    subgraph Container
+        BIN["tgbot static binary"]
     end
 
     subgraph External
         TG[Telegram API]
         GM[Gemini API]
-        SB[Supabase<br/>optional]
-        PG[PostgreSQL<br/>optional]
+        SB["Supabase (optional)"]
+        PG["PostgreSQL (optional)"]
     end
 
     ENV -->|mount read-only| BIN
     DATA -->|mount r/w| BIN
     BIN <-->|polling| TG
     BIN -->|OCR| GM
-    BIN -.->|supabase backend| SB
-    BIN -.->|postgres backend| PG
-
-    style Container fill:#1a1a2e,color:#fff
-    style BIN fill:#4a9eff,color:#fff
+    BIN -.->|supabase| SB
+    BIN -.->|postgres| PG
 ```
 
 ## Docker Compose
@@ -48,14 +45,15 @@ services:
 ```mermaid
 graph LR
     subgraph Server
-        BIN[tgbot binary] -->|sqlite| DB[(/data/bot.db)]
-        BIN -->|local storage| FS[/data/files/]
+        BIN["tgbot binary"]
+        DB[("bot.db")]
+        FS["/data/files/"]
     end
 
+    BIN -->|sqlite| DB
+    BIN -->|local| FS
     BIN <--> TG[Telegram API]
     BIN --> GM[Gemini API]
-
-    style BIN fill:#4a9eff,color:#fff
 ```
 
 ## Environment Matrix

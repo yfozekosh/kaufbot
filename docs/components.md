@@ -8,33 +8,33 @@ graph TB
     end
 
     subgraph Kaufbot
-        BOT[bot.c<br/>Telegram polling, commands]
-        PROC[processor.c<br/>Orchestration]
-        GEM[gemini.c<br/>OCR + parsing client]
-        CFG[config.c<br/>Env config loading]
-        UTIL[utils.c<br/>GrowBuf, base64, URL encode]
+        BOT["bot.c — polling, commands"]
+        PROC["processor.c — orchestration"]
+        GEM["gemini.c — OCR client"]
+        CFG["config.c — env loading"]
+        UTIL["utils.c — GrowBuf, base64"]
 
         subgraph Storage
-            SL[storage_local.c<br/>Filesystem]
-            SS[storage_supabase.c<br/>Supabase Storage]
-            SIFACE[storage_backend.h<br/>Interface]
+            SL["storage_local.c"]
+            SS["storage_supabase.c"]
+            SIFACE["storage_backend.h"]
         end
 
         subgraph Database
-            DBS[db_sqlite.c<br/>SQLite]
-            DBP[db_postgres.c<br/>PostgreSQL]
-            DIFACE[db_backend.h<br/>Interface]
+            DBS["db_sqlite.c"]
+            DBP["db_postgres.c"]
+            DIFACE["db_backend.h"]
         end
 
         subgraph ThirdParty
-            CJ[cJSON<br/>JSON parser]
+            CJ["cJSON"]
         end
     end
 
-    TG <-->|polling / responses| BOT
+    TG <-->|polling| BOT
     BOT --> PROC
     PROC --> GEM
-    GEM <-->|OCR request| GM
+    GEM <-->|OCR| GM
     PROC --> SIFACE
     PROC --> DIFACE
     SIFACE --> SL
