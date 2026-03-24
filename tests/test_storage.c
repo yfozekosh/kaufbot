@@ -207,3 +207,42 @@ TEST_CASE(storage_save_and_read_text) {
     system("rm -rf /tmp/kaufbot_text_test");
     TEST_PASS();
 }
+
+TEST_CASE(storage_mime_webp) {
+    ASSERT_STR_EQ("image/webp", storage_mime_type("test.webp"));
+    TEST_PASS();
+}
+
+TEST_CASE(storage_mime_bmp) {
+    ASSERT_STR_EQ("image/bmp", storage_mime_type("test.bmp"));
+    TEST_PASS();
+}
+
+TEST_CASE(storage_mime_gif) {
+    ASSERT_STR_EQ("image/gif", storage_mime_type("test.gif"));
+    TEST_PASS();
+}
+
+TEST_CASE(storage_mime_tiff) {
+    ASSERT_STR_EQ("image/tiff", storage_mime_type("test.tiff"));
+    TEST_PASS();
+}
+
+TEST_CASE(storage_save_text_empty) {
+    const char *test_dir = "/tmp/kaufbot_empty_text";
+    system("rm -rf /tmp/kaufbot_empty_text");
+    system("mkdir -p /tmp/kaufbot_empty_text");
+
+    int result = storage_save_text(test_dir, "empty.txt", "");
+    ASSERT_EQ(0, result);
+
+    system("rm -rf /tmp/kaufbot_empty_text");
+    TEST_PASS();
+}
+
+TEST_CASE(storage_gen_filename_with_dot_ext) {
+    char filename[MAX_FILENAME];
+    storage_gen_filename(".png", filename, sizeof(filename));
+    ASSERT_TRUE(strstr(filename, ".png") != NULL);
+    TEST_PASS();
+}

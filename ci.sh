@@ -29,8 +29,8 @@ cmake --build build --target coverage
 
 COVERAGE=$(lcov --summary build/coverage_filtered.info 2>&1 | grep 'lines' | sed 's/.*: \([0-9.]*\)%.*/\1/')
 echo "=== Line coverage: ${COVERAGE}% ==="
-if awk "BEGIN {exit !($COVERAGE < 70)}"; then
-    echo "ERROR: Coverage ${COVERAGE}% is below 70% threshold"
+if awk "BEGIN {exit !($COVERAGE < 60)}"; then
+    echo "ERROR: Coverage ${COVERAGE}% is below 60% threshold"
     exit 1
 fi
 

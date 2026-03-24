@@ -372,3 +372,117 @@ TEST_CASE(gemini_mock_empty_string) {
     ASSERT_TRUE(result == NULL);
     TEST_PASS();
 }
+
+/* ── strip_markdown_json edge cases ────────────────────────────────── */
+
+TEST_CASE(strip_no_markdown) {
+    char input[] = "{\"key\": \"value\"}";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("{\"key\": \"value\"}", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_markdown_with_language) {
+    char input[] = "```json\n{\"key\": \"value\"}\n```";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("{\"key\": \"value\"}", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_plain_markdown) {
+    char input[] = "```\nsome text\n```";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("some text", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_leading_whitespace) {
+    char input[] = "   \n\t{\"key\": \"value\"}  \n  ";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("{\"key\": \"value\"}", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_empty_string) {
+    char input[] = "";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_only_whitespace) {
+    char input[] = "   \n\t  ";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("", result);
+    TEST_PASS();
+}
+
+TEST_CASE(strip_unterminated_markdown) {
+    char input[] = "```json\n{\"key\": \"value\"}";
+    char *result = strip_markdown_json(input);
+    ASSERT_STR_EQ("{\"key\": \"value\"}", result);
+    TEST_PASS();
+}
+
+/* ── gemini_parse_api_response edge cases ──────────────────────────── */
+
+TEST_CASE(gemini_parse_empty_string2) {
+    char *result = gemini_parse_api_response("");
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_null) {
+    char *result = gemini_parse_api_response(NULL);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_missing_candidates) {
+    const char *json = "{\"error\": null}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_empty_candidates) {
+    const char *json = "{\"candidates\": []}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_missing_content) {
+    const char *json = "{\"candidates\": [{}]}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_missing_parts) {
+    const char *json = "{\"candidates\": [{\"content\": {}}]}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_empty_parts) {
+    const char *json = "{\"candidates\": [{\"content\": {\"parts\": []}}]}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_missing_text) {
+    const char *json = "{\"candidates\": [{\"content\": {\"parts\": [{}]}}]}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_text_not_string) {
+    const char *json = "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": 123}]}}]}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}

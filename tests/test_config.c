@@ -245,3 +245,54 @@ TEST_CASE(config_token_truncation) {
 
     TEST_PASS();
 }
+
+TEST_CASE(config_local_storage_explicit) {
+    set_env("TELEGRAM_TOKEN", "test_token");
+    set_env("GEMINI_API_KEY", "test_key");
+    set_env("ALLOWED_USER_IDS", "123");
+    set_env("STORAGE_BACKEND", "local");
+    set_env("STORAGE_PATH", "/custom/path");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(STORAGE_BACKEND_LOCAL, cfg.storage_backend);
+    ASSERT_STR_EQ("/custom/path", cfg.storage_path);
+
+    unset_env("STORAGE_BACKEND");
+    unset_env("STORAGE_PATH");
+    TEST_PASS();
+}
+
+TEST_CASE(config_sqlite_explicit) {
+    set_env("TELEGRAM_TOKEN", "test_token");
+    set_env("GEMINI_API_KEY", "test_key");
+    set_env("ALLOWED_USER_IDS", "123");
+    set_env("DB_BACKEND", "sqlite");
+    set_env("DB_PATH", "/custom/db.sqlite");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(DB_BACKEND_SQLITE, cfg.db_backend);
+    ASSERT_STR_EQ("/custom/db.sqlite", cfg.db_path);
+
+    unset_env("DB_BACKEND");
+    unset_env("DB_PATH");
+    TEST_PASS();
+}
+
+TEST_CASE(config_custom_gemini_model) {
+    set_env("TELEGRAM_TOKEN", "test_token");
+    set_env("GEMINI_API_KEY", "test_key");
+    set_env("ALLOWED_USER_IDS", "123");
+    set_env("GEMINI_MODEL", "gemini-pro");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_STR_EQ("gemini-pro", cfg.gemini_model);
+
+    unset_env("GEMINI_MODEL");
+    TEST_PASS();
+}

@@ -254,3 +254,53 @@ TEST_CASE(db_mark_parsing_done_update) {
     teardown_db();
     TEST_PASS();
 }
+
+TEST_CASE(db_open_invalid_path) {
+    Config cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.db_backend = DB_BACKEND_SQLITE;
+    snprintf(cfg.db_path, MAX_PATH_LEN, "/nonexistent/path/to/db.sqlite");
+
+    DBBackend *db = db_backend_open(&cfg);
+    ASSERT_TRUE(db == NULL);
+    TEST_PASS();
+}
+TEST_CASE(db_find_by_hash_not_found) {
+    setup_db();
+
+    FileRecord found;
+    int result = db_backend_find_by_hash(g_test_db, "nonexistent_hash_12345", &found);
+    ASSERT_EQ(1, result);
+
+    teardown_db();
+    TEST_PASS();
+}
+
+static void count_cb(const FileRecord *r, void *ud) {
+    (void)r;
+    (*(int *)ud)++;
+}
+
+TEST_CASE(db_list_callback) {
+    setup_db();
+
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "list_test.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "upload_list.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "listhash123");
+    db_backend_insert(g_test_db, &rec);
+
+    int count = 0;
+    db_backend_list(g_test_db, count_cb, &count);
+    ASSERT_TRUE(count >= 1);
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_close_null) {
+    db_backend_close(NULL);
+    TEST_PASS();
+}
