@@ -3,9 +3,22 @@
 #include "storage.h"
 #include "test_helpers.h"
 #include "test_runner.h"
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static void test_rmdir(const char *path) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "rm -rf %s", path);
+    (void)system(cmd);
+}
+
+static void test_mkdir(const char *path) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "mkdir -p %s", path);
+    (void)system(cmd);
+}
 
 /* Test SHA-256 hash computation */
 TEST_CASE(storage_sha256_empty) {
@@ -116,8 +129,7 @@ TEST_CASE(storage_mime_case_insensitive) {
 /* Test directory creation */
 TEST_CASE(storage_ensure_dirs_new) {
     const char *test_path = "/tmp/kaufbot_test_new_dir/subdir";
-    /* Clean up first if exists */
-    system("rm -rf /tmp/kaufbot_test_new_dir");
+    test_rmdir("/tmp/kaufbot_test_new_dir");
 
     int result = storage_ensure_dirs(test_path);
     ASSERT_EQ(0, result);
@@ -127,20 +139,19 @@ TEST_CASE(storage_ensure_dirs_new) {
     ASSERT_EQ(0, stat(test_path, &st));
     ASSERT_TRUE(S_ISDIR(st.st_mode));
 
-    /* Cleanup */
-    system("rm -rf /tmp/kaufbot_test_new_dir");
+    test_rmdir("/tmp/kaufbot_test_new_dir");
     TEST_PASS();
 }
 
 TEST_CASE(storage_ensure_dirs_existing) {
     const char *test_path = "/tmp/kaufbot_test_existing";
-    system("mkdir -p /tmp/kaufbot_test_existing");
+    test_mkdir("/tmp/kaufbot_test_existing");
 
     int result = storage_ensure_dirs(test_path);
     ASSERT_EQ(0, result);
 
     /* Cleanup */
-    system("rm -rf /tmp/kaufbot_test_existing");
+    test_rmdir("/tmp/kaufbot_test_existing");
     TEST_PASS();
 }
 
@@ -150,8 +161,8 @@ TEST_CASE(storage_save_and_read_file) {
     const char *test_file = "test.bin";
     const uint8_t data[] = {0x48, 0x65, 0x6c, 0x6c, 0x6f}; /* "Hello" */
 
-    system("rm -rf /tmp/kaufbot_save_test");
-    system("mkdir -p /tmp/kaufbot_save_test");
+    test_rmdir("/tmp/kaufbot_save_test");
+    test_mkdir("/tmp/kaufbot_save_test");
 
     int result = storage_save_file(test_dir, test_file, data, sizeof(data));
     ASSERT_EQ(0, result);
@@ -170,7 +181,7 @@ TEST_CASE(storage_save_and_read_file) {
     ASSERT_TRUE(memcmp(data, read_data, sizeof(data)) == 0);
 
     /* Cleanup */
-    system("rm -rf /tmp/kaufbot_save_test");
+    test_rmdir("/tmp/kaufbot_save_test");
     TEST_PASS();
 }
 
@@ -179,8 +190,8 @@ TEST_CASE(storage_save_and_read_text) {
     const char *test_file = "test.txt";
     const char *text = "Hello, World!";
 
-    system("rm -rf /tmp/kaufbot_text_test");
-    system("mkdir -p /tmp/kaufbot_text_test");
+    test_rmdir("/tmp/kaufbot_text_test");
+    test_mkdir("/tmp/kaufbot_text_test");
 
     int result = storage_save_text(test_dir, test_file, text);
     ASSERT_EQ(0, result);
@@ -192,7 +203,9 @@ TEST_CASE(storage_save_and_read_text) {
     ASSERT_NOT_NULL(f);
 
     char read_text[256];
-    fgets(read_text, sizeof(read_text), f);
+    if (!fgets(read_text, sizeof(read_text), f)) {
+        read_text[0] = '\0';
+    }
     fclose(f);
 
     /* Remove newline if present */
@@ -204,7 +217,7 @@ TEST_CASE(storage_save_and_read_text) {
     ASSERT_STR_EQ(text, read_text);
 
     /* Cleanup */
-    system("rm -rf /tmp/kaufbot_text_test");
+    test_rmdir("/tmp/kaufbot_text_test");
     TEST_PASS();
 }
 
@@ -230,13 +243,13 @@ TEST_CASE(storage_mime_tiff) {
 
 TEST_CASE(storage_save_text_empty) {
     const char *test_dir = "/tmp/kaufbot_empty_text";
-    system("rm -rf /tmp/kaufbot_empty_text");
-    system("mkdir -p /tmp/kaufbot_empty_text");
+    test_rmdir("/tmp/kaufbot_empty_text");
+    test_mkdir("/tmp/kaufbot_empty_text");
 
     int result = storage_save_text(test_dir, "empty.txt", "");
     ASSERT_EQ(0, result);
 
-    system("rm -rf /tmp/kaufbot_empty_text");
+    test_rmdir("/tmp/kaufbot_empty_text");
     TEST_PASS();
 }
 
