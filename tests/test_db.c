@@ -10,7 +10,7 @@ static DBBackend *g_test_db = NULL;
 static const char *g_test_db_path = "/tmp/kaufbot_test.db";
 
 static void setup_db(void) {
-    system("rm -f /tmp/kaufbot_test.db");
+    test_rm(g_test_db_path);
     g_test_db = test_db_open_sqlite(g_test_db_path);
     ASSERT_NOT_NULL(g_test_db);
 }
@@ -20,7 +20,7 @@ static void teardown_db(void) {
         test_db_close(g_test_db);
         g_test_db = NULL;
     }
-    system("rm -f /tmp/kaufbot_test.db");
+    test_rm(g_test_db_path);
 }
 
 /* Test database open/close */

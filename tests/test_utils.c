@@ -1,3 +1,4 @@
+#include "test_helpers.h"
 #include "test_runner.h"
 #include "utils.h"
 #include <stdio.h>
@@ -227,7 +228,7 @@ TEST_CASE(safe_remove_file) {
 
 TEST_CASE(safe_remove_dir) {
     const char *dir = "/tmp/kaufbot_test_remove_dir";
-    system("rm -rf /tmp/kaufbot_test_remove_dir");
+    test_rmrf("/tmp/kaufbot_test_remove_dir");
     mkdir(dir, 0755);
 
     int result = safe_remove_path(dir);

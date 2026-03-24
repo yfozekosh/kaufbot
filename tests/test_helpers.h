@@ -5,9 +5,12 @@
 #include "db_backend.h"
 #include "storage_backend.h"
 
+#include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 /* ── Test database helpers ────────────────────────────────────────────────── */
 
@@ -37,7 +40,50 @@ static inline void test_storage_close(StorageBackend *storage) {
     storage_backend_close(storage);
 }
 
-/* ── Test utilities ──────────────────────────────────────────────────────── */
+/* ── File/dir cleanup helpers (no shell calls) ───────────────────────────── */
+
+static inline void test_rm(const char *path) {
+    /* Best-effort remove file; ignore if it doesn't exist */
+    (void)remove(path);
+}
+
+static inline void test_rmrf(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0)
+        return;
+
+    if (S_ISDIR(st.st_mode)) {
+        DIR *d = opendir(path);
+        if (!d)
+            return;
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+                continue;
+            char child[4096];
+            int n = snprintf(child, sizeof(child), "%.2048s/%.2048s", path, ent->d_name);
+            if (n > 0 && (size_t)n < sizeof(child))
+                test_rmrf(child);
+        }
+        closedir(d);
+        rmdir(path);
+    } else {
+        remove(path);
+    }
+}
+
+static inline void test_mkdirp(const char *path) {
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            mkdir(tmp, 0755);
+            *p = '/';
+        }
+    }
+    mkdir(tmp, 0755);
+}
 
 static inline int test_cleanup_file(const char *path) {
     return remove(path);
@@ -46,18 +92,8 @@ static inline int test_cleanup_file(const char *path) {
 static inline int test_cleanup_dir(const char *path) {
     if (!path || path[0] == '\0')
         return -1;
-
-    /* Use unlinkat with AT_REMOVEDIR for safe recursive removal,
-     * or fall back to remove() for simple cases. Avoid shell injection. */
-    struct stat st;
-    if (stat(path, &st) != 0)
-        return -1;
-
-    if (S_ISDIR(st.st_mode)) {
-        /* Use system with a fixed string + validated path only if path is safe */
-        return remove(path); /* Only removes empty dirs - acceptable for tests */
-    }
-    return remove(path);
+    test_rmrf(path);
+    return 0;
 }
 
 #endif /* TEST_HELPERS_H */

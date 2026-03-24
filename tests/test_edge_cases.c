@@ -66,8 +66,8 @@ TEST_CASE(storage_save_empty_file) {
     const char *test_file = "empty.bin";
     const uint8_t data[1] = {0};
 
-    system("rm -rf /tmp/kaufbot_empty_file");
-    system("mkdir -p /tmp/kaufbot_empty_file");
+    test_rmrf(test_dir);
+    test_mkdirp(test_dir);
 
     int result = storage_save_file(test_dir, test_file, data, 0);
     ASSERT_EQ(0, result);
@@ -83,7 +83,7 @@ TEST_CASE(storage_save_empty_file) {
 
     ASSERT_EQ(0, size);
 
-    system("rm -rf /tmp/kaufbot_empty_file");
+    test_rmrf(test_dir);
     TEST_PASS();
 }
 
@@ -96,8 +96,8 @@ TEST_CASE(storage_save_large_file) {
     ASSERT_NOT_NULL(data);
     memset(data, 0xAB, size);
 
-    system("rm -rf /tmp/kaufbot_large_file");
-    system("mkdir -p /tmp/kaufbot_large_file");
+    test_rmrf(test_dir);
+    test_mkdirp(test_dir);
 
     int result = storage_save_file(test_dir, test_file, data, size);
     ASSERT_EQ(0, result);
@@ -114,7 +114,7 @@ TEST_CASE(storage_save_large_file) {
     ASSERT_EQ((long)size, actual_size);
 
     free(data);
-    system("rm -rf /tmp/kaufbot_large_file");
+    test_rmrf(test_dir);
     TEST_PASS();
 }
 
@@ -122,13 +122,13 @@ TEST_CASE(storage_text_empty) {
     const char *test_dir = "/tmp/kaufbot_empty_text";
     const char *test_file = "empty.txt";
 
-    system("rm -rf /tmp/kaufbot_empty_text");
-    system("mkdir -p /tmp/kaufbot_empty_text");
+    test_rmrf(test_dir);
+    test_mkdirp(test_dir);
 
     int result = storage_save_text(test_dir, test_file, "");
     ASSERT_EQ(0, result);
 
-    system("rm -rf /tmp/kaufbot_empty_text");
+    test_rmrf(test_dir);
     TEST_PASS();
 }
 
@@ -137,8 +137,8 @@ TEST_CASE(storage_text_multiline) {
     const char *test_file = "multiline.txt";
     const char *text = "Line 1\nLine 2\nLine 3\n";
 
-    system("rm -rf /tmp/kaufbot_multiline");
-    system("mkdir -p /tmp/kaufbot_multiline");
+    test_rmrf(test_dir);
+    test_mkdirp(test_dir);
 
     int result = storage_save_text(test_dir, test_file, text);
     ASSERT_EQ(0, result);
@@ -155,19 +155,19 @@ TEST_CASE(storage_text_multiline) {
 
     ASSERT_STR_EQ(text, buffer);
 
-    system("rm -rf /tmp/kaufbot_multiline");
+    test_rmrf(test_dir);
     TEST_PASS();
 }
 
 /* ── Database edge cases (using backend API) ─────────────────────────────── */
 
 static DBBackend *open_test_db(const char *path) {
-    system("rm -f /tmp/kaufbot_edge.db");
-    system("rm -f /tmp/kaufbot_long.db");
-    system("rm -f /tmp/kaufbot_zero.db");
-    system("rm -f /tmp/kaufbot_special.db");
-    system("rm -f /tmp/kaufbot_unicode.db");
-    system("rm -f /tmp/kaufbot_multi_parse.db");
+    test_rm("/tmp/kaufbot_edge.db");
+    test_rm("/tmp/kaufbot_long.db");
+    test_rm("/tmp/kaufbot_zero.db");
+    test_rm("/tmp/kaufbot_special.db");
+    test_rm("/tmp/kaufbot_unicode.db");
+    test_rm("/tmp/kaufbot_multi_parse.db");
     return test_db_open_sqlite(path);
 }
 
@@ -186,7 +186,7 @@ TEST_CASE(db_empty_filename) {
     ASSERT_EQ(0, result);
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_edge.db");
+    test_rm("/tmp/kaufbot_edge.db");
     TEST_PASS();
 }
 
@@ -210,7 +210,7 @@ TEST_CASE(db_very_long_filename) {
     ASSERT_EQ(DB_ORIG_NAME_LEN - 1, (int)strlen(found.original_file_name));
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_long.db");
+    test_rm("/tmp/kaufbot_long.db");
     TEST_PASS();
 }
 
@@ -230,7 +230,7 @@ TEST_CASE(db_zero_file_size) {
     ASSERT_EQ(0, rec.file_size_bytes);
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_zero.db");
+    test_rm("/tmp/kaufbot_zero.db");
     TEST_PASS();
 }
 
@@ -254,7 +254,7 @@ TEST_CASE(db_special_characters_in_filename) {
     ASSERT_STR_EQ("file with spaces & special (chars).jpg", found.original_file_name);
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_special.db");
+    test_rm("/tmp/kaufbot_special.db");
     TEST_PASS();
 }
 
@@ -279,7 +279,7 @@ TEST_CASE(db_unicode_in_filename) {
     ASSERT_EQ(0, strncmp(found.original_file_name, rec.original_file_name, DB_ORIG_NAME_LEN));
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_unicode.db");
+    test_rm("/tmp/kaufbot_unicode.db");
     TEST_PASS();
 }
 
@@ -321,7 +321,7 @@ TEST_CASE(db_multiple_parsed_receipts) {
     }
 
     test_db_close(db);
-    system("rm -f /tmp/kaufbot_multi_parse.db");
+    test_rm("/tmp/kaufbot_multi_parse.db");
     TEST_PASS();
 }
 
