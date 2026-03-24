@@ -11,13 +11,13 @@
 static void test_rmdir(const char *path) {
     char cmd[512];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", path);
-    (void)system(cmd);
+    int ret __attribute__((unused)) = system(cmd);
 }
 
 static void test_mkdir(const char *path) {
     char cmd[512];
     snprintf(cmd, sizeof(cmd), "mkdir -p %s", path);
-    (void)system(cmd);
+    int ret __attribute__((unused)) = system(cmd);
 }
 
 /* Test SHA-256 hash computation */
