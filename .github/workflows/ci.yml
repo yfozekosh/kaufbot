@@ -89,7 +89,11 @@ jobs:
                   testsuite.set("failures", str(int(testsuite.get("failures")) + 1))
 
           testsuite.set("time", str(total_time))
-          ET.ElementTree(testsuites).write("build/test-results.xml", encoding="utf-8", xml_declaration=True)
+
+          # Write with proper XML declaration and formatting
+          tree = ET.ElementTree(testsuites)
+          ET.indent(tree, space="  ")
+          tree.write("build/test-results.xml", encoding="utf-8", xml_declaration=True)
           print("JUnit XML generated: build/test-results.xml")
           EOF
 
