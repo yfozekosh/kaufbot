@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master, main]
 
+permissions:
+  checks: write
+  contents: read
+
 env:
   FORCE_NODE24: true
 
@@ -57,44 +61,35 @@ jobs:
           ctest_tree = ET.parse(test_xml[0])
           ctest_root = ctest_tree.getroot()
 
-          testsuites = ET.Element("testsuites")
-          testsuite = ET.SubElement(testsuites, "testsuite", {
-              "name": "kaufbot_tests",
-              "tests": "0",
-              "failures": "0",
-              "errors": "0",
-              "time": "0"
-          })
+          lines = ['<?xml version="1.0" encoding="UTF-8"?>']
+          lines.append('<testsuites>')
 
+          total_tests = 0
+          total_failures = 0
           total_time = 0.0
+
           for test in ctest_root.findall(".//Test"):
               name = test.get("Name")
               status = test.get("Status")
               time_elem = test.find("Results/NamedMeasurement[@name='Execution Time']/Value")
               time_val = float(time_elem.text) if time_elem is not None and time_elem.text else 0.0
               total_time += time_val
-
-              testcase = ET.SubElement(testsuite, "testcase", {
-                  "name": name,
-                  "classname": "kaufbot_tests",
-                  "time": str(time_val)
-              })
+              total_tests += 1
 
               if status != "passed":
-                  failure = ET.SubElement(testcase, "failure")
-                  failure.text = f"Test {name} failed with status: {status}"
+                  total_failures += 1
+                  lines.append(f'  <testcase name="{name}" classname="kaufbot_tests" time="{time_val}">')
+                  lines.append(f'    <failure>Test {name} failed with status: {status}</failure>')
+                  lines.append('  </testcase>')
+              else:
+                  lines.append(f'  <testcase name="{name}" classname="kaufbot_tests" time="{time_val}" />')
 
-              testsuite.set("tests", str(int(testsuite.get("tests")) + 1))
-              if status != "passed":
-                  testsuite.set("failures", str(int(testsuite.get("failures")) + 1))
+          lines.append('</testsuites>')
 
-          testsuite.set("time", str(total_time))
+          with open("build/test-results.xml", "w") as f:
+              f.write("\n".join(lines))
 
-          # Write with proper XML declaration and formatting
-          tree = ET.ElementTree(testsuites)
-          ET.indent(tree, space="  ")
-          tree.write("build/test-results.xml", encoding="utf-8", xml_declaration=True)
-          print("JUnit XML generated: build/test-results.xml")
+          print(f"JUnit XML generated: build/test-results.xml ({total_tests} tests, {total_failures} failures)")
           EOF
 
       - name: Publish Test Results
