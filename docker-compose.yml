@@ -1,6 +1,7 @@
 services:
   kaufbot:
     build: .
+    container_name: kaufbot
     restart: unless-stopped
     env_file: .env
     volumes:
