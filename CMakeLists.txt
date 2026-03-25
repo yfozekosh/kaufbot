@@ -111,6 +111,16 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
+    add_test_module(test_processor
+        ${CMAKE_SOURCE_DIR}/tests/test_processor.c
+        ${CMAKE_SOURCE_DIR}/src/processor.c
+        ${CMAKE_SOURCE_DIR}/src/gemini.c
+        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+    )
+    target_compile_definitions(test_processor PRIVATE TEST_BUILD)
+
     add_test_module(test_config
         ${CMAKE_SOURCE_DIR}/tests/test_config.c
         ${CMAKE_SOURCE_DIR}/src/config.c

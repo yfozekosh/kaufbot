@@ -41,7 +41,65 @@ jobs:
         run: cmake --build build
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --no-tests=error -T Test
+
+      - name: Convert CTest results to JUnit XML
+        run: |
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          import glob
+
+          test_xml = glob.glob("build/Testing/*/Test.xml")
+          if not test_xml:
+              print("No CTest results found")
+              exit(1)
+
+          ctest_tree = ET.parse(test_xml[0])
+          ctest_root = ctest_tree.getroot()
+
+          testsuites = ET.Element("testsuites")
+          testsuite = ET.SubElement(testsuites, "testsuite", {
+              "name": "kaufbot_tests",
+              "tests": "0",
+              "failures": "0",
+              "errors": "0",
+              "time": "0"
+          })
+
+          total_time = 0.0
+          for test in ctest_root.findall(".//Test"):
+              name = test.get("Name")
+              status = test.get("Status")
+              time_elem = test.find("Results/NamedMeasurement[@name='Execution Time']/Value")
+              time_val = float(time_elem.text) if time_elem is not None and time_elem.text else 0.0
+              total_time += time_val
+
+              testcase = ET.SubElement(testsuite, "testcase", {
+                  "name": name,
+                  "classname": "kaufbot_tests",
+                  "time": str(time_val)
+              })
+
+              if status != "passed":
+                  failure = ET.SubElement(testcase, "failure")
+                  failure.text = f"Test {name} failed with status: {status}"
+
+              testsuite.set("tests", str(int(testsuite.get("tests")) + 1))
+              if status != "passed":
+                  testsuite.set("failures", str(int(testsuite.get("failures")) + 1))
+
+          testsuite.set("time", str(total_time))
+          ET.ElementTree(testsuites).write("build/test-results.xml", encoding="utf-8", xml_declaration=True)
+          print("JUnit XML generated: build/test-results.xml")
+          EOF
+
+      - name: Publish Test Results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          junit_files: build/test-results.xml
+          check_name: Test Results (${{ matrix.postgres }})
+          comment_mode: always
 
   lint:
     name: Lint
@@ -107,7 +165,65 @@ jobs:
         run: cmake --build build
 
       - name: Test
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --no-tests=error -T Test
+
+      - name: Convert CTest results to JUnit XML
+        run: |
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          import glob
+
+          test_xml = glob.glob("build/Testing/*/Test.xml")
+          if not test_xml:
+              print("No CTest results found")
+              exit(1)
+
+          ctest_tree = ET.parse(test_xml[0])
+          ctest_root = ctest_tree.getroot()
+
+          testsuites = ET.Element("testsuites")
+          testsuite = ET.SubElement(testsuites, "testsuite", {
+              "name": "kaufbot_tests",
+              "tests": "0",
+              "failures": "0",
+              "errors": "0",
+              "time": "0"
+          })
+
+          total_time = 0.0
+          for test in ctest_root.findall(".//Test"):
+              name = test.get("Name")
+              status = test.get("Status")
+              time_elem = test.find("Results/NamedMeasurement[@name='Execution Time']/Value")
+              time_val = float(time_elem.text) if time_elem is not None and time_elem.text else 0.0
+              total_time += time_val
+
+              testcase = ET.SubElement(testsuite, "testcase", {
+                  "name": name,
+                  "classname": "kaufbot_tests",
+                  "time": str(time_val)
+              })
+
+              if status != "passed":
+                  failure = ET.SubElement(testcase, "failure")
+                  failure.text = f"Test {name} failed with status: {status}"
+
+              testsuite.set("tests", str(int(testsuite.get("tests")) + 1))
+              if status != "passed":
+                  testsuite.set("failures", str(int(testsuite.get("failures")) + 1))
+
+          testsuite.set("time", str(total_time))
+          ET.ElementTree(testsuites).write("build/test-results.xml", encoding="utf-8", xml_declaration=True)
+          print("JUnit XML generated: build/test-results.xml")
+          EOF
+
+      - name: Publish Test Results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          junit_files: build/test-results.xml
+          check_name: Test Results (coverage)
+          comment_mode: always
 
       - name: Generate coverage report
         run: cmake --build build --target coverage

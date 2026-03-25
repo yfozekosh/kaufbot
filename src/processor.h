@@ -26,4 +26,15 @@ void processor_free(Processor *p);
 void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
                            size_t data_len, char *reply_buf, size_t reply_buf_len);
 
+/* ── Test helpers ─────────────────────────────────────────────────────────── */
+
+#ifdef TEST_BUILD
+#include "cJSON.h"
+
+/* Build reply from parsed JSON - exposed for testing */
+void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
+                              const char *ocr_filename, const char *original_name, size_t data_len,
+                              cJSON *json);
+#endif
+
 #endif /* PROCESSOR_H */

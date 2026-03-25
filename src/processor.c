@@ -56,9 +56,9 @@ void processor_free(Processor *p) {
 
 /* ── pipeline sub-steps ──────────────────────────────────────────────────── */
 
-static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
-                                     const char *ocr_filename, const char *original_name,
-                                     size_t data_len, cJSON *json) {
+void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
+                              const char *ocr_filename, const char *original_name, size_t data_len,
+                              cJSON *json) {
     cJSON *store_info = cJSON_GetObjectItem(json, "store_information");
     cJSON *store_name = store_info ? cJSON_GetObjectItem(store_info, "name") : NULL;
     cJSON *total_sum = cJSON_GetObjectItem(json, "total_sum");
@@ -85,9 +85,10 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char
             cJSON *price = cJSON_GetObjectItem(item, "price");
             cJSON *amount = cJSON_GetObjectItem(item, "amount");
 
-            const char *item_name = (orig_name && cJSON_IsString(orig_name) && orig_name->valuestring)
-                                        ? orig_name->valuestring
-                                        : "Unknown";
+            const char *item_name =
+                (orig_name && cJSON_IsString(orig_name) && orig_name->valuestring)
+                    ? orig_name->valuestring
+                    : "Unknown";
             double item_price = (price && cJSON_IsNumber(price)) ? price->valuedouble : 0.0;
             double item_amount = (amount && cJSON_IsNumber(amount)) ? amount->valuedouble : 1.0;
             double line_total = item_price * item_amount;
@@ -95,8 +96,9 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char
 
             int remaining = (int)sizeof(items_text) - pos;
             if (remaining > 0) {
-                pos += snprintf(items_text + pos, (size_t)remaining, "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n",
-                                i + 1, item_name, item_price, item_amount, line_total);
+                pos += snprintf(items_text + pos, (size_t)remaining,
+                                "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n", i + 1, item_name,
+                                item_price, item_amount, line_total);
             }
         }
     }
@@ -114,15 +116,15 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char
                     "Full parsed data saved to database.",
                     saved_name, ocr_filename, name, items_text, calculated_total, parsed_total);
 
-    /* Add warning if totals differ by more than 1 cent */
+    /* Add warning if totals differ by more than 1 cent (with floating point tolerance) */
     double diff = calculated_total - parsed_total;
     if (diff < 0)
         diff = -diff;
 
-    if (diff > 0.01) {
-        pos += snprintf(reply_buf + pos, buf_len - pos,
-                        "\n⚠️ Warning: Calculated total (%.2f EUR) differs from parsed total (%.2f EUR)",
-                        calculated_total, parsed_total);
+    if (diff > 0.015) { /* > 1 cent with FP tolerance */
+        snprintf(reply_buf + pos, buf_len - pos,
+                 "\n⚠️ Warning: Calculated total (%.2f EUR) differs from parsed total (%.2f EUR)",
+                 calculated_total, parsed_total);
     }
 
     (void)original_name;
