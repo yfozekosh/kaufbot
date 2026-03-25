@@ -20,4 +20,10 @@ void bot_start(TgBot *bot);
 /* Signal the polling loop to stop (safe to call from signal handler). */
 void bot_stop(TgBot *bot);
 
+/* Send startup notification to all allowed users. */
+void bot_notify_startup(const TgBot *bot);
+
+/* Send a message to a specific chat. Internal helper exposed for bot_notify_startup. */
+void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text);
+
 #endif /* BOT_H */

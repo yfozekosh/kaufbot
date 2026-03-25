@@ -76,6 +76,7 @@ int main(void) {
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
+    bot_notify_startup(bot);
     bot_start(bot);
 
     bot_free(bot);

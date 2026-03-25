@@ -97,7 +97,7 @@ static char *http_post_json(const char *url, const char *json_body) {
 
 /* ── Telegram helpers ─────────────────────────────────────────────────────── */
 
-static void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
+void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
     if (!text) {
         LOG_ERROR("tg_send_message: text is NULL");
         return;
@@ -479,4 +479,24 @@ void bot_start(TgBot *bot) {
     }
 
     LOG_INFO("polling loop stopped");
+}
+
+void bot_notify_startup(const TgBot *bot) {
+    if (!bot || !bot->cfg)
+        return;
+
+    const char *msg = "✅ *Kaufbot Deployed and Running!*\n\n"
+                      "📷 Send me receipt images and I will:\n"
+                      "  1. Extract text via Gemini OCR\n"
+                      "  2. Parse line items and totals\n"
+                      "  3. Store results for later retrieval\n\n"
+                      "Commands:\n"
+                      "  /start - welcome message\n"
+                      "  /help  - show instructions\n"
+                      "  /list  - show recent receipts";
+
+    for (int i = 0; i < bot->cfg->allowed_users_count; i++) {
+        int64_t user_id = bot->cfg->allowed_users[i];
+        tg_send_message(bot, user_id, msg);
+    }
 }
