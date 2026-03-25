@@ -1,11 +1,14 @@
 #!/bin/bash
 # Deploy script for Kaufbot
 # Usage: ./deploy.sh
+# Typical flow: git pull && ./deploy.sh
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_DIR="/opt/stacks/kaufbot"
 
 echo "Building kaufbot..."
+cd "$SCRIPT_DIR"
 docker compose build
 
 # Create stack directory if it doesn't exist
@@ -14,7 +17,7 @@ if [ ! -d "$STACK_DIR" ]; then
     sudo mkdir -p "$STACK_DIR"
     sudo mkdir -p "$STACK_DIR/data"
 
-    cat > /tmp/kaufbot-compose.yml <<'EOF'
+    cat > "$STACK_DIR/docker-compose.yml" <<'EOF'
 services:
   kaufbot:
     image: kaufbot:latest
@@ -31,13 +34,12 @@ services:
 networks: {}
 EOF
 
-    sudo mv /tmp/kaufbot-compose.yml "$STACK_DIR/docker-compose.yml"
     sudo chown -R "$USER":"$USER" "$STACK_DIR"
 
-    if [ -f .env ]; then
-        cp .env "$STACK_DIR/"
-    elif [ -f .env.example ]; then
-        cp .env.example "$STACK_DIR/.env"
+    if [ -f "$SCRIPT_DIR/.env" ]; then
+        cp "$SCRIPT_DIR/.env" "$STACK_DIR/"
+    elif [ -f "$SCRIPT_DIR/.env.example" ]; then
+        cp "$SCRIPT_DIR/.env.example" "$STACK_DIR/.env"
         echo "Warning: copied .env.example — edit $STACK_DIR/.env before starting."
     fi
 fi
