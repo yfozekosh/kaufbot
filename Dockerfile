@@ -14,6 +14,7 @@ RUN apk add --no-cache \
     musl-dev \
     curl-dev \
     sqlite-dev \
+    postgresql-dev \
     wget
 
 WORKDIR /build
@@ -42,6 +43,7 @@ FROM alpine:3.20
 RUN apk add --no-cache \
     libcurl \
     sqlite-libs \
+    postgresql-libs \
     ca-certificates
 
 COPY --from=builder /build/build/tgbot /usr/local/bin/tgbot
