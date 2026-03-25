@@ -67,18 +67,63 @@ static void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char
     const char *name = (store_name && cJSON_IsString(store_name) && store_name->valuestring)
                            ? store_name->valuestring
                            : "Unknown";
-    double total = (total_sum && cJSON_IsNumber(total_sum)) ? total_sum->valuedouble : 0;
+    double parsed_total = (total_sum && cJSON_IsNumber(total_sum)) ? total_sum->valuedouble : 0;
     int item_count = (line_items && cJSON_IsArray(line_items)) ? cJSON_GetArraySize(line_items) : 0;
 
-    snprintf(reply_buf, buf_len,
-             "File saved: %s\n"
-             "OCR result saved: %s\n"
-             "Receipt parsed successfully!\n\n"
-             "Store: %s\n"
-             "Items: %d\n"
-             "Total: %.2f EUR\n\n"
-             "Full parsed data saved to database.",
-             saved_name, ocr_filename, name, item_count, total);
+    /* Calculate total from line items */
+    double calculated_total = 0.0;
+    char items_text[2048] = {0};
+    int pos = 0;
+
+    if (line_items && cJSON_IsArray(line_items)) {
+        for (int i = 0; i < item_count; i++) {
+            cJSON *item = cJSON_GetArrayItem(line_items, i);
+            if (!item)
+                continue;
+
+            cJSON *orig_name = cJSON_GetObjectItem(item, "original_name");
+            cJSON *price = cJSON_GetObjectItem(item, "price");
+            cJSON *amount = cJSON_GetObjectItem(item, "amount");
+
+            const char *item_name = (orig_name && cJSON_IsString(orig_name) && orig_name->valuestring)
+                                        ? orig_name->valuestring
+                                        : "Unknown";
+            double item_price = (price && cJSON_IsNumber(price)) ? price->valuedouble : 0.0;
+            double item_amount = (amount && cJSON_IsNumber(amount)) ? amount->valuedouble : 1.0;
+            double line_total = item_price * item_amount;
+            calculated_total += line_total;
+
+            int remaining = (int)sizeof(items_text) - pos;
+            if (remaining > 0) {
+                pos += snprintf(items_text + pos, (size_t)remaining, "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n",
+                                i + 1, item_name, item_price, item_amount, line_total);
+            }
+        }
+    }
+
+    /* Build reply */
+    pos = 0;
+    pos += snprintf(reply_buf + pos, buf_len - pos,
+                    "File saved: %s\n"
+                    "OCR result saved: %s\n"
+                    "Receipt parsed successfully!\n\n"
+                    "Store: %s\n\n"
+                    "Line items:\n%s\n"
+                    "Calculated total: %.2f EUR\n"
+                    "Parsed total: %.2f EUR\n\n"
+                    "Full parsed data saved to database.",
+                    saved_name, ocr_filename, name, items_text, calculated_total, parsed_total);
+
+    /* Add warning if totals differ by more than 1 cent */
+    double diff = calculated_total - parsed_total;
+    if (diff < 0)
+        diff = -diff;
+
+    if (diff > 0.01) {
+        pos += snprintf(reply_buf + pos, buf_len - pos,
+                        "\n⚠️ Warning: Calculated total (%.2f EUR) differs from parsed total (%.2f EUR)",
+                        calculated_total, parsed_total);
+    }
 
     (void)original_name;
     (void)data_len;
