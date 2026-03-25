@@ -1,5 +1,5 @@
 #include "gemini.h"
-#include "../third_party/cjson/cJSON.h"
+#include "cJSON.h"
 #include "config.h"
 #include "storage.h"
 #include "utils.h"

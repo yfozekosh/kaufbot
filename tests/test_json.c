@@ -1,6 +1,6 @@
 /* ── JSON/Parsing tests ───────────────────────────────────────────────────── */
 
-#include "../third_party/cjson/cJSON.h"
+#include "cJSON.h"
 #include "gemini.h"
 #include "test_runner.h"
 #include <stdlib.h>

@@ -1,5 +1,5 @@
 #include "bot.h"
-#include "../third_party/cjson/cJSON.h"
+#include "cJSON.h"
 #include "config.h"
 #include "utils.h"
 

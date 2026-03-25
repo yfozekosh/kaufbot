@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 1: Build
 # ─────────────────────────────────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM alpine:3.20 AS builder
+FROM alpine:3.20 AS builder
 
 ARG CJSON_VERSION=v1.7.18
 
-# Build tools
+# Build tools and libraries
 RUN apk add --no-cache \
     cmake \
     ninja \
@@ -14,12 +14,6 @@ RUN apk add --no-cache \
     musl-dev \
     curl-dev \
     sqlite-dev \
-    curl-static \
-    sqlite-static \
-    openssl-dev \
-    openssl-libs-static \
-    nghttp2-static \
-    zlib-static \
     wget
 
 WORKDIR /build
@@ -38,19 +32,20 @@ COPY src/            src/
 RUN cmake -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCJSON_DIR=/cjson \
-      -DCMAKE_EXE_LINKER_FLAGS="-static" \
     && cmake --build build --parallel $(nproc)
 
-# Confirm binary is static
-RUN file build/tgbot && (ldd build/tgbot 2>&1 || true)
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 2: Runtime — scratch image, absolute minimum footprint
+# Stage 2: Runtime — minimal Alpine image
 # ─────────────────────────────────────────────────────────────────────────────
-FROM scratch
+FROM alpine:3.20
 
-COPY --from=builder /build/build/tgbot /tgbot
+RUN apk add --no-cache \
+    libcurl \
+    sqlite-libs \
+    ca-certificates
+
+COPY --from=builder /build/build/tgbot /usr/local/bin/tgbot
 
 VOLUME ["/data"]
 
-ENTRYPOINT ["/tgbot"]
+ENTRYPOINT ["tgbot"]

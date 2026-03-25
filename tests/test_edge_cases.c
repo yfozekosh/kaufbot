@@ -1,6 +1,6 @@
 /* ── Additional edge case and integration tests ──────────────────────────── */
 
-#include "../third_party/cjson/cJSON.h"
+#include "cJSON.h"
 #include "db_backend.h"
 #include "storage.h"
 #include "test_helpers.h"
