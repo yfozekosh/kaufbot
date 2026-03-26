@@ -31,7 +31,8 @@ TEST_CASE(bot_new_and_free) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     TgBot *bot = bot_new(&cfg, p, db, storage);
@@ -56,7 +57,8 @@ TEST_CASE(bot_stop_null) {
 TEST_CASE(processor_new_null_db) {
     Config cfg = make_test_config();
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
 
     Processor *p = processor_new(NULL, storage, gemini, NULL);
     ASSERT_TRUE(p == NULL);
@@ -69,7 +71,8 @@ TEST_CASE(processor_new_null_db) {
 TEST_CASE(processor_new_null_storage) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
 
     Processor *p = processor_new(db, NULL, gemini, NULL);
     ASSERT_TRUE(p == NULL);
@@ -96,7 +99,8 @@ TEST_CASE(processor_new_and_free) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
 
     Processor *p = processor_new(db, storage, gemini, NULL);
     ASSERT_NOT_NULL(p);
@@ -114,7 +118,8 @@ TEST_CASE(processor_new_custom_strategy) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
 
     Processor *p = processor_new(db, storage, gemini, strategy_notify_and_skip);
     ASSERT_NOT_NULL(p);
@@ -132,7 +137,8 @@ TEST_CASE(processor_handle_null_params) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     char reply[256];
@@ -196,7 +202,8 @@ TEST_CASE(processor_retry_ocr_not_found) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     char reply[512];
@@ -217,7 +224,8 @@ TEST_CASE(processor_retry_ocr_no_ocr_file) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     /* Insert a file record without OCR */
@@ -248,7 +256,8 @@ TEST_CASE(processor_retry_ocr_with_ocr_text) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     /* Insert a file record with OCR */
@@ -288,7 +297,8 @@ TEST_CASE(processor_retry_ocr_null_params) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     ASSERT_EQ(-1, processor_retry_ocr(p, 1, NULL, sizeof(reply)));
@@ -308,7 +318,8 @@ TEST_CASE(processor_duplicate_detection) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     const uint8_t data[] = "test duplicate data";
@@ -338,7 +349,8 @@ TEST_CASE(processor_empty_data) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     char reply[512] = {0};
@@ -384,7 +396,8 @@ TEST_CASE(bot_start_immediate_exit) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     TgBot *bot = bot_new(&cfg, p, db, storage);

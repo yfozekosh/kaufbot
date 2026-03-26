@@ -164,6 +164,13 @@ int config_load(Config *cfg) {
     snprintf(cfg->gemini_model, MAX_MODEL_LEN, "%s",
              env_or_default("GEMINI_MODEL", "gemini-2.5-flash"));
 
+    snprintf(cfg->gemini_fallback_model, MAX_MODEL_LEN, "%s",
+             env_or_default("GEMINI_FALLBACK_MODEL", "gemma-3-27b-it"));
+
+    const char *fb_enabled = env_or_default("GEMINI_FALLBACK_ENABLED", "0");
+    cfg->gemini_fallback_enabled =
+        (strcmp(fb_enabled, "1") == 0 || strcmp(fb_enabled, "true") == 0);
+
     if (config_load_storage(cfg) != 0)
         return -1;
     if (config_load_database(cfg) != 0)

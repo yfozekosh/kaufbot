@@ -45,7 +45,8 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
+                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
     if (!gemini) {
         LOG_ERROR("failed to create Gemini client");
         db_backend_close(db);

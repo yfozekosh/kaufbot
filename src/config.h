@@ -52,6 +52,8 @@ typedef struct {
     char telegram_token[MAX_TOKEN_LEN];
     char gemini_api_key[MAX_TOKEN_LEN];
     char gemini_model[MAX_MODEL_LEN];
+    char gemini_fallback_model[MAX_MODEL_LEN];
+    int gemini_fallback_enabled;
 
     /* Storage backend config */
     StorageBackendType storage_backend;
