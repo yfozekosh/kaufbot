@@ -418,6 +418,78 @@ static int postgres_update_prompt(DBBackend *backend, int64_t id, const char *co
     return 0;
 }
 
+/* ── find by id ───────────────────────────────────────────────────────────── */
+
+static int postgres_find_by_id(DBBackend *backend, int64_t id, FileRecord *out) {
+    PostgresDB *db = (PostgresDB *)backend->internal;
+    LOG_DEBUG("looking up file by id: %lld", (long long)id);
+
+    const char *sql = "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
+                      "       file_hash, is_ocr_processed, ocr_file_name,"
+                      "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
+                      "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+                      " FROM files WHERE id = $1 LIMIT 1";
+
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
+    const char *params[1] = {id_str};
+
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        LOG_ERROR("find_by_id query error: %s", PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+
+    if (PQntuples(res) == 0) {
+        PQclear(res);
+        LOG_DEBUG("file not found by id");
+        return 1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->id = strtoll(PQgetvalue(res, 0, 0), NULL, 10);
+    snprintf(out->original_file_name, DB_ORIG_NAME_LEN, "%s", PQgetvalue(res, 0, 1));
+    out->file_size_bytes = strtoll(PQgetvalue(res, 0, 2), NULL, 10);
+    snprintf(out->saved_file_name, DB_FILENAME_LEN, "%s", PQgetvalue(res, 0, 3));
+    snprintf(out->file_hash, DB_HASH_LEN, "%s", PQgetvalue(res, 0, 4));
+    out->is_ocr_processed = strcmp(PQgetvalue(res, 0, 5), "t") == 0;
+    snprintf(out->ocr_file_name, DB_OCR_FILENAME_LEN, "%s", PQgetvalue(res, 0, 6));
+    snprintf(out->created_at, DB_DATE_LEN, "%s", PQgetvalue(res, 0, 7));
+    snprintf(out->updated_at, DB_DATE_LEN, "%s", PQgetvalue(res, 0, 8));
+
+    PQclear(res);
+    LOG_DEBUG("file found: id=%lld", (long long)out->id);
+    return 0;
+}
+
+/* ── delete file ──────────────────────────────────────────────────────────── */
+
+static int postgres_delete_file(DBBackend *backend, int64_t id) {
+    PostgresDB *db = (PostgresDB *)backend->internal;
+    LOG_DEBUG("deleting file id=%lld", (long long)id);
+
+    const char *sql = "DELETE FROM files WHERE id = $1";
+
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
+    const char *params[1] = {id_str};
+
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        LOG_ERROR("delete_file error: %s", PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+
+    const char *rows = PQcmdTuples(res);
+    int affected = atoi(rows);
+    PQclear(res);
+
+    LOG_DEBUG("deleted %d row(s) for file id=%lld", affected, (long long)id);
+    return (affected > 0) ? 0 : 1; /* 1 = not found */
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const DBBackendOps postgres_ops = {.open = postgres_open,
@@ -429,7 +501,9 @@ static const DBBackendOps postgres_ops = {.open = postgres_open,
                                           .get_parsed_receipt = postgres_get_parsed_receipt,
                                           .list = postgres_list,
                                           .get_prompts = postgres_get_prompts,
-                                          .update_prompt = postgres_update_prompt};
+                                          .update_prompt = postgres_update_prompt,
+                                          .find_by_id = postgres_find_by_id,
+                                          .delete_file = postgres_delete_file};
 
 DBBackend *db_backend_postgres_open(const Config *cfg) {
     return postgres_ops.open(cfg);

@@ -34,7 +34,7 @@ TEST_CASE(bot_new_and_free) {
     GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
-    TgBot *bot = bot_new(&cfg, p, db);
+    TgBot *bot = bot_new(&cfg, p, db, storage);
     ASSERT_NOT_NULL(bot);
 
     bot_free(bot);
@@ -138,19 +138,19 @@ TEST_CASE(processor_handle_null_params) {
     char reply[256];
 
     /* NULL processor */
-    processor_handle_file(NULL, "test.jpg", (const uint8_t *)"data", 4, reply, sizeof(reply));
+    processor_handle_file(NULL, "test.jpg", (const uint8_t *)"data", 4, reply, sizeof(reply), NULL);
 
     /* NULL name */
-    processor_handle_file(p, NULL, (const uint8_t *)"data", 4, reply, sizeof(reply));
+    processor_handle_file(p, NULL, (const uint8_t *)"data", 4, reply, sizeof(reply), NULL);
 
     /* NULL data */
-    processor_handle_file(p, "test.jpg", NULL, 4, reply, sizeof(reply));
+    processor_handle_file(p, "test.jpg", NULL, 4, reply, sizeof(reply), NULL);
 
     /* NULL reply */
-    processor_handle_file(p, "test.jpg", (const uint8_t *)"data", 4, NULL, 0);
+    processor_handle_file(p, "test.jpg", (const uint8_t *)"data", 4, NULL, 0, NULL);
 
     /* Zero reply_len */
-    processor_handle_file(p, "test.jpg", (const uint8_t *)"data", 4, reply, 0);
+    processor_handle_file(p, "test.jpg", (const uint8_t *)"data", 4, reply, 0, NULL);
 
     processor_free(p);
     gemini_free(gemini);
@@ -204,11 +204,11 @@ TEST_CASE(processor_duplicate_detection) {
     char reply2[512] = {0};
 
     /* First call - would try OCR (fails because no real Gemini) */
-    processor_handle_file(p, "test_dup.jpg", data, sizeof(data), reply1, sizeof(reply1));
+    processor_handle_file(p, "test_dup.jpg", data, sizeof(data), reply1, sizeof(reply1), NULL);
     ASSERT_TRUE(strlen(reply1) > 0);
 
     /* Second call with same data - should detect duplicate */
-    processor_handle_file(p, "test_dup.jpg", data, sizeof(data), reply2, sizeof(reply2));
+    processor_handle_file(p, "test_dup.jpg", data, sizeof(data), reply2, sizeof(reply2), NULL);
     ASSERT_TRUE(strstr(reply2, "Duplicate") != NULL || strstr(reply2, "duplicate") != NULL ||
                 strlen(reply2) > 0);
 
@@ -230,7 +230,7 @@ TEST_CASE(processor_empty_data) {
     Processor *p = processor_new(db, storage, gemini, NULL);
 
     char reply[512] = {0};
-    processor_handle_file(p, "empty.jpg", (const uint8_t *)"", 0, reply, sizeof(reply));
+    processor_handle_file(p, "empty.jpg", (const uint8_t *)"", 0, reply, sizeof(reply), NULL);
     /* Should handle empty data gracefully */
     ASSERT_TRUE(strlen(reply) > 0 || reply[0] == '\0');
 
@@ -275,7 +275,7 @@ TEST_CASE(bot_start_immediate_exit) {
     GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
     Processor *p = processor_new(db, storage, gemini, NULL);
 
-    TgBot *bot = bot_new(&cfg, p, db);
+    TgBot *bot = bot_new(&cfg, p, db, storage);
     ASSERT_NOT_NULL(bot);
 
     /* Stop before start - loop exits immediately */

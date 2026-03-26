@@ -62,7 +62,7 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    TgBot *bot = bot_new(&cfg, processor, db);
+    TgBot *bot = bot_new(&cfg, processor, db, storage);
     if (!bot) {
         LOG_ERROR("failed to create bot");
         processor_free(processor);

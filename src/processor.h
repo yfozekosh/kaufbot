@@ -22,9 +22,10 @@ Processor *processor_new(DBBackend *db, StorageBackend *storage, void *gemini, /
 
 void processor_free(Processor *p);
 
-/* Process an uploaded file. */
+/* Process an uploaded file. If out_file_id is non-NULL, sets it to the DB record ID. */
 void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
-                           size_t data_len, char *reply_buf, size_t reply_buf_len);
+                           size_t data_len, char *reply_buf, size_t reply_buf_len,
+                           int64_t *out_file_id);
 
 /* ── Test helpers ─────────────────────────────────────────────────────────── */
 

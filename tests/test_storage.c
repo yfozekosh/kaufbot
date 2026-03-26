@@ -247,3 +247,64 @@ TEST_CASE(storage_gen_filename_with_dot_ext) {
     ASSERT_TRUE(strstr(filename, ".png") != NULL);
     TEST_PASS();
 }
+
+/* ── Storage backend delete tests ─────────────────────────────────────────── */
+
+#include "storage_backend.h"
+
+TEST_CASE(storage_backend_delete_existing) {
+    const char *dir = "/tmp/kaufbot_del_test";
+    test_rmrf(dir);
+    test_mkdirp(dir);
+
+    Config cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.storage_backend = STORAGE_BACKEND_LOCAL;
+    snprintf(cfg.storage_path, sizeof(cfg.storage_path), "%s", dir);
+
+    StorageBackend *sb = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(sb);
+    ASSERT_EQ(0, storage_backend_ensure_dirs(sb));
+
+    /* Save a file */
+    const uint8_t data[] = "test data for deletion";
+    ASSERT_EQ(0, storage_backend_save_file(sb, "to_delete.txt", data, sizeof(data)));
+    ASSERT_EQ(1, storage_backend_file_exists(sb, "to_delete.txt"));
+
+    /* Delete it */
+    int result = storage_backend_delete_file(sb, "to_delete.txt");
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(0, storage_backend_file_exists(sb, "to_delete.txt"));
+
+    storage_backend_close(sb);
+    test_rmrf(dir);
+    TEST_PASS();
+}
+
+TEST_CASE(storage_backend_delete_not_found) {
+    const char *dir = "/tmp/kaufbot_del_nf";
+    test_rmrf(dir);
+    test_mkdirp(dir);
+
+    Config cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.storage_backend = STORAGE_BACKEND_LOCAL;
+    snprintf(cfg.storage_path, sizeof(cfg.storage_path), "%s", dir);
+
+    StorageBackend *sb = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(sb);
+    ASSERT_EQ(0, storage_backend_ensure_dirs(sb));
+
+    int result = storage_backend_delete_file(sb, "nonexistent.txt");
+    ASSERT_EQ(1, result); /* 1 = not found */
+
+    storage_backend_close(sb);
+    test_rmrf(dir);
+    TEST_PASS();
+}
+
+TEST_CASE(storage_backend_delete_null) {
+    int result = storage_backend_delete_file(NULL, "file.txt");
+    ASSERT_EQ(-1, result);
+    TEST_PASS();
+}

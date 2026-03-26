@@ -58,6 +58,7 @@ static DBBackend *sqlite_open(const Config *cfg) {
     sqlite3_exec(db->conn, "PRAGMA synchronous=NORMAL;", NULL, NULL, NULL);
     sqlite3_exec(db->conn, "PRAGMA busy_timeout=5000;", NULL, NULL, NULL);
     sqlite3_exec(db->conn, "PRAGMA cache_size=-2000;", NULL, NULL, NULL);
+    sqlite3_exec(db->conn, "PRAGMA foreign_keys=ON;", NULL, NULL, NULL);
 
     const char *schema =
         "CREATE TABLE IF NOT EXISTS files ("
@@ -77,7 +78,7 @@ static DBBackend *sqlite_open(const Config *cfg) {
         "  parsed_json  TEXT    NOT NULL,"
         "  created_at   TEXT    NOT NULL,"
         "  updated_at   TEXT    NOT NULL,"
-        "  FOREIGN KEY (file_id) REFERENCES files(id)"
+        "  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash);"
         "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);"
@@ -478,6 +479,84 @@ static int sqlite_update_prompt(DBBackend *backend, int64_t id, const char *cont
     return 0;
 }
 
+/* ── find by id ───────────────────────────────────────────────────────────── */
+
+static int sqlite_find_by_id(DBBackend *backend, int64_t id, FileRecord *out) {
+    SQLiteDB *db = (SQLiteDB *)backend->internal;
+    LOG_DEBUG("looking up file by id: %lld", (long long)id);
+
+    const char *sql = "SELECT id, original_file_name, file_size_bytes, saved_file_name,"
+                      "       file_hash, is_ocr_processed, ocr_file_name, created_at, updated_at"
+                      " FROM files WHERE id = ? LIMIT 1";
+
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare find_by_id: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, id);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        LOG_DEBUG("file not found by id");
+        return 1;
+    }
+    if (rc != SQLITE_ROW) {
+        LOG_ERROR("step find_by_id: %s", sqlite3_errmsg(db->conn));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->id = sqlite3_column_int64(stmt, 0);
+    snprintf(out->original_file_name, DB_ORIG_NAME_LEN, "%s",
+             (const char *)sqlite3_column_text(stmt, 1));
+    out->file_size_bytes = sqlite3_column_int64(stmt, 2);
+    snprintf(out->saved_file_name, DB_FILENAME_LEN, "%s",
+             (const char *)sqlite3_column_text(stmt, 3));
+    snprintf(out->file_hash, DB_HASH_LEN, "%s", (const char *)sqlite3_column_text(stmt, 4));
+    out->is_ocr_processed = sqlite3_column_int(stmt, 5);
+    snprintf(out->ocr_file_name, DB_OCR_FILENAME_LEN, "%s",
+             (const char *)sqlite3_column_text(stmt, 6));
+    snprintf(out->created_at, DB_DATE_LEN, "%s", (const char *)sqlite3_column_text(stmt, 7));
+    snprintf(out->updated_at, DB_DATE_LEN, "%s", (const char *)sqlite3_column_text(stmt, 8));
+
+    sqlite3_finalize(stmt);
+    LOG_DEBUG("file found: id=%lld", (long long)out->id);
+    return 0;
+}
+
+/* ── delete file ──────────────────────────────────────────────────────────── */
+
+static int sqlite_delete_file(DBBackend *backend, int64_t id) {
+    SQLiteDB *db = (SQLiteDB *)backend->internal;
+    LOG_DEBUG("deleting file id=%lld", (long long)id);
+
+    const char *sql = "DELETE FROM files WHERE id = ?";
+
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare delete_file: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, id);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        LOG_ERROR("delete_file error: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+
+    int changes = sqlite3_changes(db->conn);
+    LOG_DEBUG("deleted %d row(s) for file id=%lld", changes, (long long)id);
+    return (changes > 0) ? 0 : 1; /* 1 = not found */
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const DBBackendOps sqlite_ops = {.open = sqlite_open,
@@ -489,7 +568,9 @@ static const DBBackendOps sqlite_ops = {.open = sqlite_open,
                                         .get_parsed_receipt = sqlite_get_parsed_receipt,
                                         .list = sqlite_list,
                                         .get_prompts = sqlite_get_prompts,
-                                        .update_prompt = sqlite_update_prompt};
+                                        .update_prompt = sqlite_update_prompt,
+                                        .find_by_id = sqlite_find_by_id,
+                                        .delete_file = sqlite_delete_file};
 
 DBBackend *db_backend_sqlite_open(const Config *cfg) {
     return sqlite_ops.open(cfg);

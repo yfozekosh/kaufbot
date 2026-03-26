@@ -304,3 +304,121 @@ TEST_CASE(db_close_null) {
     db_backend_close(NULL);
     TEST_PASS();
 }
+
+/* ── find_by_id tests ─────────────────────────────────────────────────────── */
+
+TEST_CASE(db_find_by_id) {
+    setup_db();
+
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", "test.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", "upload.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "%s", "hash_by_id");
+    rec.is_ocr_processed = 0;
+    ASSERT_EQ(0, db_backend_insert(g_test_db, &rec));
+    int64_t inserted_id = rec.id;
+
+    FileRecord found;
+    int result = db_backend_find_by_id(g_test_db, inserted_id, &found);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(inserted_id, found.id);
+    ASSERT_STR_EQ("test.jpg", found.original_file_name);
+    ASSERT_EQ(100, found.file_size_bytes);
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_find_by_id_not_found) {
+    setup_db();
+
+    FileRecord found;
+    int result = db_backend_find_by_id(g_test_db, 9999, &found);
+    ASSERT_EQ(1, result); /* 1 = not found */
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_find_by_id_null) {
+    FileRecord found;
+    int result = db_backend_find_by_id(NULL, 1, &found);
+    ASSERT_EQ(-1, result);
+    TEST_PASS();
+}
+
+/* ── delete_file tests ────────────────────────────────────────────────────── */
+
+TEST_CASE(db_delete_file) {
+    setup_db();
+
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", "to_delete.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", "upload_del.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "%s", "hash_del");
+    rec.is_ocr_processed = 0;
+    ASSERT_EQ(0, db_backend_insert(g_test_db, &rec));
+    int64_t id = rec.id;
+
+    /* Delete it */
+    int result = db_backend_delete_file(g_test_db, id);
+    ASSERT_EQ(0, result);
+
+    /* Verify it's gone */
+    FileRecord found;
+    ASSERT_EQ(1, db_backend_find_by_id(g_test_db, id, &found));
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_delete_file_not_found) {
+    setup_db();
+
+    int result = db_backend_delete_file(g_test_db, 9999);
+    ASSERT_EQ(1, result); /* 1 = not found */
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_delete_file_cascades_receipt) {
+    setup_db();
+
+    /* Insert file */
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "%s", "cascade.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "%s", "upload_cascade.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "%s", "hash_cascade");
+    rec.is_ocr_processed = 1;
+    ASSERT_EQ(0, db_backend_insert(g_test_db, &rec));
+
+    /* Add parsed receipt */
+    const char *json = "{\"store\":\"Test\"}";
+    ASSERT_EQ(0, db_backend_mark_parsing_done(g_test_db, rec.id, json));
+
+    /* Verify receipt exists */
+    ParsedReceipt parsed;
+    ASSERT_EQ(0, db_backend_get_parsed_receipt(g_test_db, rec.id, &parsed));
+
+    /* Delete file - should cascade to parsed_receipts */
+    ASSERT_EQ(0, db_backend_delete_file(g_test_db, rec.id));
+
+    /* Verify receipt is also gone */
+    ASSERT_EQ(1, db_backend_get_parsed_receipt(g_test_db, rec.id, &parsed));
+
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(db_delete_file_null) {
+    int result = db_backend_delete_file(NULL, 1);
+    ASSERT_EQ(-1, result);
+    TEST_PASS();
+}

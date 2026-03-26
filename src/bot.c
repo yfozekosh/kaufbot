@@ -26,6 +26,7 @@
 #define TG_CMD_START                 "/start"
 #define TG_CMD_HELP                  "/help"
 #define TG_CMD_LIST                  "/list"
+#define TG_CMD_DELETE                "/delete"
 #define PROMPT_REFRESH_INTERVAL_SECS 300
 
 /* Forward declaration */
@@ -35,6 +36,7 @@ struct TgBot {
     const Config *cfg;
     Processor *processor;
     DBBackend *db;
+    StorageBackend *storage;
     PromptFetcher *prompt_fetcher;
     atomic_int running;
     long offset;
@@ -115,6 +117,84 @@ void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
     cJSON_AddStringToObject(payload, "text", text);
+
+    char *body = cJSON_PrintUnformatted(payload);
+    cJSON_Delete(payload);
+
+    if (!body)
+        return;
+
+    char *resp = http_post_json(url, body);
+    free(body);
+    free(resp);
+}
+
+static void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, const char *text,
+                                          int64_t db_file_id) {
+    if (!text) {
+        LOG_ERROR("tg_send_message_with_keyboard: text is NULL");
+        return;
+    }
+
+    char url[MAX_URL_LEN];
+    snprintf(url, sizeof(url), "%s%s/sendMessage", TG_API_BASE, bot->cfg->telegram_token);
+
+    cJSON *payload = cJSON_CreateObject();
+    cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
+    cJSON_AddStringToObject(payload, "text", text);
+
+    /* Build inline keyboard: [[{"text": "Delete", "callback_data": "delete:<id>"}]] */
+    cJSON *keyboard = cJSON_CreateArray();
+    cJSON *row = cJSON_CreateArray();
+    cJSON *button = cJSON_CreateObject();
+    char cb_data[64];
+    snprintf(cb_data, sizeof(cb_data), "delete:%lld", (long long)db_file_id);
+    cJSON_AddStringToObject(button, "text", "Delete");
+    cJSON_AddStringToObject(button, "callback_data", cb_data);
+    cJSON_AddItemToArray(row, button);
+    cJSON_AddItemToArray(keyboard, row);
+    cJSON *reply_markup = cJSON_CreateObject();
+    cJSON_AddItemToObject(reply_markup, "inline_keyboard", keyboard);
+    cJSON_AddItemToObject(payload, "reply_markup", reply_markup);
+
+    char *body = cJSON_PrintUnformatted(payload);
+    cJSON_Delete(payload);
+
+    if (!body)
+        return;
+
+    char *resp = http_post_json(url, body);
+    free(body);
+    free(resp);
+}
+
+static void tg_answer_callback_query(const TgBot *bot, const char *query_id, const char *text) {
+    char url[MAX_URL_LEN];
+    snprintf(url, sizeof(url), "%s%s/answerCallbackQuery", TG_API_BASE, bot->cfg->telegram_token);
+
+    cJSON *payload = cJSON_CreateObject();
+    cJSON_AddStringToObject(payload, "callback_query_id", query_id);
+    if (text)
+        cJSON_AddStringToObject(payload, "text", text);
+
+    char *body = cJSON_PrintUnformatted(payload);
+    cJSON_Delete(payload);
+
+    if (!body)
+        return;
+
+    char *resp = http_post_json(url, body);
+    free(body);
+    free(resp);
+}
+
+static void tg_delete_message(const TgBot *bot, int64_t chat_id, int64_t message_id) {
+    char url[MAX_URL_LEN];
+    snprintf(url, sizeof(url), "%s%s/deleteMessage", TG_API_BASE, bot->cfg->telegram_token);
+
+    cJSON *payload = cJSON_CreateObject();
+    cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
+    cJSON_AddNumberToObject(payload, "message_id", (double)message_id);
 
     char *body = cJSON_PrintUnformatted(payload);
     cJSON_Delete(payload);
@@ -223,6 +303,33 @@ static int str_starts_with(const char *text, const char *cmd) {
     return strncmp(text, cmd, cmd_len) == 0 && (text[cmd_len] == '\0' || text[cmd_len] == ' ');
 }
 
+/* Delete a file record and its storage files. Returns 0 on success. */
+static int do_delete_file(const TgBot *bot, int64_t db_file_id, char *msg_buf, size_t msg_len) {
+    FileRecord rec;
+    int found = db_backend_find_by_id(bot->db, db_file_id, &rec);
+    if (found != 0) {
+        snprintf(msg_buf, msg_len, "File with ID %lld not found.", (long long)db_file_id);
+        return -1;
+    }
+
+    /* Delete storage files (best-effort) */
+    if (bot->storage && rec.saved_file_name[0] != '\0')
+        storage_backend_delete_file(bot->storage, rec.saved_file_name);
+    if (bot->storage && rec.ocr_file_name[0] != '\0')
+        storage_backend_delete_file(bot->storage, rec.ocr_file_name);
+
+    /* Delete from DB (CASCADE will delete parsed_receipts) */
+    int rc = db_backend_delete_file(bot->db, db_file_id);
+    if (rc != 0) {
+        snprintf(msg_buf, msg_len, "Failed to delete file %lld.", (long long)db_file_id);
+        return -1;
+    }
+
+    snprintf(msg_buf, msg_len, "Deleted: %s (ID: %lld)", rec.original_file_name,
+             (long long)db_file_id);
+    return 0;
+}
+
 static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
     if (str_starts_with(text, TG_CMD_START) || str_starts_with(text, TG_CMD_HELP)) {
         tg_send_message(bot, chat_id,
@@ -233,8 +340,9 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
                         "  2. Extract all text via Gemini OCR\n"
                         "  3. Send you the result\n\n"
                         "Commands:\n"
-                        "  /help  - show this message\n"
-                        "  /list  - show recently uploaded files");
+                        "  /help      - show this message\n"
+                        "  /list      - show recently uploaded files\n"
+                        "  /delete ID - delete a file by its ID");
         return;
     }
 
@@ -247,6 +355,29 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
         db_backend_list(bot->db, list_cb, &ctx);
 
         tg_send_message(bot, chat_id, reply);
+        return;
+    }
+
+    if (str_starts_with(text, TG_CMD_DELETE)) {
+        const char *arg = text + strlen(TG_CMD_DELETE);
+        while (*arg == ' ')
+            arg++;
+
+        if (*arg == '\0') {
+            tg_send_message(bot, chat_id, "Usage: /delete <id>");
+            return;
+        }
+
+        char *end;
+        long long id = strtoll(arg, &end, 10);
+        if (end == arg || *end != '\0') {
+            tg_send_message(bot, chat_id, "Invalid ID. Usage: /delete <id>");
+            return;
+        }
+
+        char msg[MAX_REPLY_LEN];
+        do_delete_file(bot, (int64_t)id, msg, sizeof(msg));
+        tg_send_message(bot, chat_id, msg);
         return;
     }
 
@@ -286,10 +417,16 @@ static void handle_file(TgBot *bot, int64_t chat_id, const char *file_id,
     char reply[MAX_REPLY_LEN];
     tg_send_message(bot, chat_id, "Processing...");
 
-    processor_handle_file(bot->processor, original_name, data, data_len, reply, sizeof(reply));
+    int64_t db_file_id = 0;
+    processor_handle_file(bot->processor, original_name, data, data_len, reply, sizeof(reply),
+                          &db_file_id);
     free(data);
 
-    tg_send_message(bot, chat_id, reply);
+    if (db_file_id > 0) {
+        tg_send_message_with_keyboard(bot, chat_id, reply, db_file_id);
+    } else {
+        tg_send_message(bot, chat_id, reply);
+    }
 }
 
 /* ── update dispatcher ───────────────────────────────────────────────────── */
@@ -348,6 +485,55 @@ static void dispatch_document(TgBot *bot, int64_t chat_id, int64_t user_id, cJSO
 }
 
 static void dispatch_update(TgBot *bot, cJSON *update) {
+    /* Handle callback_query (inline keyboard button clicks) */
+    cJSON *cb_query = cJSON_GetObjectItem(update, "callback_query");
+    if (cb_query) {
+        cJSON *cb_data = cJSON_GetObjectItem(cb_query, "data");
+        cJSON *cb_id = cJSON_GetObjectItem(cb_query, "id");
+        cJSON *cb_from = cJSON_GetObjectItem(cb_query, "from");
+        cJSON *cb_message = cJSON_GetObjectItem(cb_query, "message");
+
+        if (!cJSON_IsString(cb_data) || !cJSON_IsString(cb_id) || !cb_from || !cb_message)
+            return;
+
+        cJSON *from_id = cJSON_GetObjectItem(cb_from, "id");
+        if (!cJSON_IsNumber(from_id))
+            return;
+        int64_t user_id = (int64_t)from_id->valuedouble;
+
+        if (!config_is_allowed(bot->cfg, user_id)) {
+            LOG_WARN("unauthorized callback from user %lld", (long long)user_id);
+            tg_answer_callback_query(bot, cb_id->valuestring, "Not authorized.");
+            return;
+        }
+
+        const char *data = cb_data->valuestring;
+        if (strncmp(data, "delete:", 7) == 0) {
+            long long file_id = strtoll(data + 7, NULL, 10);
+
+            cJSON *chat = cJSON_GetObjectItem(cb_message, "chat");
+            cJSON *chat_id = chat ? cJSON_GetObjectItem(chat, "id") : NULL;
+            cJSON *msg_id = cJSON_GetObjectItem(cb_message, "message_id");
+
+            char msg[MAX_REPLY_LEN];
+            int rc = do_delete_file(bot, (int64_t)file_id, msg, sizeof(msg));
+
+            if (rc == 0) {
+                /* Delete the message with the button */
+                if (cJSON_IsNumber(chat_id) && cJSON_IsNumber(msg_id)) {
+                    tg_delete_message(bot, (int64_t)chat_id->valuedouble,
+                                      (int64_t)msg_id->valuedouble);
+                }
+                tg_answer_callback_query(bot, cb_id->valuestring, "File deleted.");
+            } else {
+                tg_answer_callback_query(bot, cb_id->valuestring, msg);
+            }
+        } else {
+            tg_answer_callback_query(bot, cb_id->valuestring, NULL);
+        }
+        return;
+    }
+
     cJSON *message = cJSON_GetObjectItem(update, "message");
     if (!message)
         return;
@@ -395,7 +581,7 @@ static void dispatch_update(TgBot *bot, cJSON *update) {
 
 static int g_curl_initialized = 0;
 
-TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db) {
+TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db, StorageBackend *storage) {
     if (!g_curl_initialized) {
         CURLcode rc = curl_global_init(CURL_GLOBAL_DEFAULT);
         if (rc != CURLE_OK) {
@@ -411,6 +597,7 @@ TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db) {
     bot->cfg = cfg;
     bot->processor = processor;
     bot->db = db;
+    bot->storage = storage;
     bot->offset = 0;
     atomic_store(&bot->running, 1);
 
@@ -446,9 +633,11 @@ void bot_start(TgBot *bot) {
     LOG_INFO("starting long-poll loop (timeout=%ds)", POLL_TIMEOUT);
 
     while (atomic_load(&bot->running)) {
-        snprintf(url, sizeof(url),
-                 "%s%s/getUpdates?offset=%ld&timeout=%d&allowed_updates=[\"message\"]", TG_API_BASE,
-                 bot->cfg->telegram_token, bot->offset, POLL_TIMEOUT);
+        snprintf(
+            url, sizeof(url),
+            "%s%s/"
+            "getUpdates?offset=%ld&timeout=%d&allowed_updates=[\"message\",\"callback_query\"]",
+            TG_API_BASE, bot->cfg->telegram_token, bot->offset, POLL_TIMEOUT);
 
         char *body = http_get(url, POLL_TIMEOUT);
         if (!body) {

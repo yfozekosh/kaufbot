@@ -269,6 +269,51 @@ static int supabase_check_public_access(const SupabaseStorage *storage, const ch
     return (res == CURLE_OK && http_code == 200);
 }
 
+static int supabase_delete_file(StorageBackend *backend, const char *filename) {
+    SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
+             filename);
+
+    LOG_DEBUG("deleting file from Supabase: %s", filename);
+
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return -1;
+
+    struct curl_slist *headers = build_auth_headers(storage);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        LOG_ERROR("supabase delete failed: %s", curl_easy_strerror(res));
+        return -1;
+    }
+
+    if (http_code == 404) {
+        LOG_DEBUG("file not found in Supabase: %s", filename);
+        return 1;
+    }
+
+    if (http_code != 200 && http_code != 204) {
+        LOG_ERROR("supabase delete returned HTTP %ld", http_code);
+        return -1;
+    }
+
+    LOG_DEBUG("file deleted from Supabase: %s", filename);
+    return 0;
+}
+
 static char *supabase_get_public_url(StorageBackend *backend, const char *filename) {
     SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
 
@@ -286,6 +331,7 @@ static const StorageBackendOps supabase_ops = {.open = supabase_open,
                                                .save_file = supabase_save_file,
                                                .save_text = supabase_save_text,
                                                .file_exists = supabase_file_exists,
+                                               .delete_file = supabase_delete_file,
                                                .get_public_url = supabase_get_public_url};
 
 StorageBackend *storage_backend_supabase_open(const Config *cfg) {

@@ -9,7 +9,7 @@ typedef struct TgBot TgBot;
 
 /* Create the bot. Borrowed pointers – bot does not free them.
  * Returns NULL on error. */
-TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db);
+TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db, StorageBackend *storage);
 
 /* Free the bot. */
 void bot_free(TgBot *bot);

@@ -24,6 +24,10 @@ typedef struct {
     /* Prompt operations */
     int (*get_prompts)(DBBackend *db, db_prompts_cb cb, void *userdata);
     int (*update_prompt)(DBBackend *db, int64_t id, const char *content);
+
+    /* Delete operations */
+    int (*find_by_id)(DBBackend *db, int64_t id, FileRecord *out);
+    int (*delete_file)(DBBackend *db, int64_t id);
 } DBBackendOps;
 
 struct DBBackendImpl {
@@ -125,6 +129,30 @@ static inline int db_backend_update_prompt(DBBackend *db, int64_t id, const char
         return db->ops->update_prompt(db, id, content);
     }
     return -1;
+}
+
+static inline int db_backend_find_by_id(DBBackend *db, int64_t id, FileRecord *out) {
+    if (!db) {
+        LOG_ERROR("db_backend_find_by_id: db is NULL");
+        return -1;
+    }
+    if (!db->ops || !db->ops->find_by_id) {
+        LOG_ERROR("db_backend_find_by_id: not implemented");
+        return -1;
+    }
+    return db->ops->find_by_id(db, id, out);
+}
+
+static inline int db_backend_delete_file(DBBackend *db, int64_t id) {
+    if (!db) {
+        LOG_ERROR("db_backend_delete_file: db is NULL");
+        return -1;
+    }
+    if (!db->ops || !db->ops->delete_file) {
+        LOG_ERROR("db_backend_delete_file: not implemented");
+        return -1;
+    }
+    return db->ops->delete_file(db, id);
 }
 
 #endif /* DB_BACKEND_H */

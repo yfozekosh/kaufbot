@@ -19,6 +19,7 @@ typedef struct {
                      size_t len);
     int (*save_text)(StorageBackend *storage, const char *filename, const char *text);
     int (*file_exists)(StorageBackend *storage, const char *filename);
+    int (*delete_file)(StorageBackend *storage, const char *filename);
     char *(*get_public_url)(StorageBackend *storage, const char *filename);
 } StorageBackendOps;
 
@@ -82,6 +83,13 @@ static inline int storage_backend_save_text(StorageBackend *storage, const char 
 static inline int storage_backend_file_exists(StorageBackend *storage, const char *filename) {
     if (storage && storage->ops && storage->ops->file_exists) {
         return storage->ops->file_exists(storage, filename);
+    }
+    return -1;
+}
+
+static inline int storage_backend_delete_file(StorageBackend *storage, const char *filename) {
+    if (storage && storage->ops && storage->ops->delete_file) {
+        return storage->ops->delete_file(storage, filename);
     }
     return -1;
 }

@@ -264,6 +264,24 @@ static int local_file_exists(StorageBackend *backend, const char *filename) {
     return (stat(full_path, &st) == 0) ? 1 : 0;
 }
 
+static int local_delete_file(StorageBackend *backend, const char *filename) {
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    char full_path[MAX_PATH_LEN * 2];
+    snprintf(full_path, sizeof(full_path), "%s/%s", storage->base_path, filename);
+
+    LOG_DEBUG("deleting file: %s", full_path);
+    if (remove(full_path) != 0) {
+        if (errno == ENOENT) {
+            LOG_DEBUG("file not found: %s", full_path);
+            return 1; /* not found */
+        }
+        LOG_ERROR("remove failed for %s: %s", full_path, strerror(errno));
+        return -1;
+    }
+    LOG_DEBUG("file deleted: %s", full_path);
+    return 0;
+}
+
 static char *local_get_public_url(StorageBackend *backend, const char *filename) {
     (void)backend;
     (void)filename;
@@ -317,6 +335,7 @@ static const StorageBackendOps local_ops = {.open = local_open,
                                             .save_file = local_save_file,
                                             .save_text = local_save_text,
                                             .file_exists = local_file_exists,
+                                            .delete_file = local_delete_file,
                                             .get_public_url = local_get_public_url};
 
 StorageBackend *storage_backend_local_open(const Config *cfg) {

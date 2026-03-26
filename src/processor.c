@@ -59,6 +59,8 @@ void processor_free(Processor *p) {
 void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
                               const char *ocr_filename, const char *original_name, size_t data_len,
                               cJSON *json) {
+    (void)original_name;
+    (void)data_len;
     cJSON *store_info = cJSON_GetObjectItem(json, "store_information");
     cJSON *store_name = store_info ? cJSON_GetObjectItem(store_info, "name") : NULL;
     cJSON *total_sum = cJSON_GetObjectItem(json, "total_sum");
@@ -215,7 +217,10 @@ static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *
 }
 
 void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
-                           size_t data_len, char *reply_buf, size_t reply_buf_len) {
+                           size_t data_len, char *reply_buf, size_t reply_buf_len,
+                           int64_t *out_file_id) {
+    if (out_file_id)
+        *out_file_id = 0;
     if (!p || !original_name || !data || !reply_buf || reply_buf_len == 0) {
         LOG_ERROR("processor_handle_file: invalid parameters");
         return;
@@ -243,6 +248,9 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                             reply_buf_len) != 0)
         return;
 
+    if (out_file_id)
+        *out_file_id = rec.id;
+
     char *ocr_text = processor_run_ocr(p, original_name, data, data_len, rec.saved_file_name, &rec,
                                        reply_buf, reply_buf_len);
     if (!ocr_text)
@@ -266,12 +274,17 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                  "File saved: %s\n"
                  "OCR result saved: %s\n"
                  "Receipt parsed and saved to database.\n"
-                 "Original: %s  |  Size: %zu bytes",
-                 rec.saved_file_name, ocr_filename, original_name, data_len);
+                 "Original: %s  |  Size: %zu bytes\n\n"
+                 "ID: %lld",
+                 rec.saved_file_name, ocr_filename, original_name, data_len, (long long)rec.id);
     } else {
         processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
                                  original_name, data_len, json);
         cJSON_Delete(json);
+        size_t len = strlen(reply_buf);
+        if (len + 32 < reply_buf_len) {
+            snprintf(reply_buf + len, reply_buf_len - len, "\n\nID: %lld", (long long)rec.id);
+        }
     }
 
     free(ocr_text);
