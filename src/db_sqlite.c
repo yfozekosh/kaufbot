@@ -98,6 +98,49 @@ static DBBackend *sqlite_open(const Config *cfg) {
         return NULL;
     }
 
+    /* Seed default prompts if table is empty */
+    static const char *seed =
+        "INSERT OR IGNORE INTO prompts (name, content, created_at, updated_at)"
+        " SELECT 'ocr',"
+        "  'Extract ALL text from this image or document. This document is a receipt from one"
+        " of the well-know german supermarkets."
+        " Preserve the original layout and formatting as closely as possible."
+        " Items on the same line in the image/pdf should stay on the same line in the output"
+        " text."
+        " If the line starts with the blank text - use spaces to align text with the text"
+        " position on the image/document."
+        " If there is no text, respond with: [NO TEXT FOUND]."
+        " Output only the extracted text, nothing else.',"
+        "  datetime('now'), datetime('now')"
+        " WHERE NOT EXISTS (SELECT 1 FROM prompts);";
+    sqlite3_exec(db->conn, seed, NULL, NULL, NULL);
+
+    static const char *seed2 =
+        "INSERT OR IGNORE INTO prompts (name, content, created_at, updated_at)"
+        " SELECT 'parser',"
+        "  'You are an expert German supermarket receipt parsing tool. You are given text"
+        " extracted from a receipt photo via OCR. The layout is important, as item"
+        " descriptions often span multiple lines."
+        " Your task is to extract the data and return it strictly as a JSON document"
+        " matching the schema below. Return ONLY the raw JSON.'"
+        " || '"
+        " Extraction Rules:"
+        " Multi-line Items: Merge wrapped lines into a single original_name."
+        " Translation: Provide an accurate English translation."
+        " Categorization: Assign a broad category and sub_category."
+        " Amounts and Units: Default to 1 if not stated. Extract unit from name."
+        " Other Info: Group remaining data into the other object.'"
+        " || '"
+        " JSON Schema: {store_information:{name,address},"
+        " line_items:[{id,original_name,english_translation,category,sub_category,"
+        " price,tax_group,amount,unit_of_measure}],"
+        " total_sum,number_of_items,"
+        " other:{date,time,receipt_number,payment_method,tax_details,card_details,"
+        " raw_unmapped_text}}',"
+        "  datetime('now'), datetime('now')"
+        " WHERE NOT EXISTS (SELECT 1 FROM prompts WHERE name='parser');";
+    sqlite3_exec(db->conn, seed2, NULL, NULL, NULL);
+
     DBBackend *backend = calloc(1, sizeof(DBBackend));
     if (!backend) {
         sqlite3_close(db->conn);
@@ -106,6 +149,7 @@ static DBBackend *sqlite_open(const Config *cfg) {
     }
     backend->ops = &sqlite_ops;
     backend->internal = db;
+
     LOG_INFO("SQLite database opened successfully");
     return backend;
 }

@@ -70,11 +70,14 @@ static void prompt_collect_cb(const Prompt *p, void *ud) {
 TEST_CASE(prompts_get_empty) {
     setup_db();
 
+    /* DB seeds 2 default prompts (ocr, parser) */
     PromptCollectCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     int result = db_backend_get_prompts(g_test_db, prompt_collect_cb, &ctx);
     ASSERT_EQ(0, result);
-    ASSERT_EQ(0, ctx.count);
+    ASSERT_EQ(2, ctx.count);
+    ASSERT_STR_EQ("ocr", ctx.prompts[0].name);
+    ASSERT_STR_EQ("parser", ctx.prompts[1].name);
 
     teardown_db();
     TEST_PASS();
@@ -82,20 +85,21 @@ TEST_CASE(prompts_get_empty) {
 
 TEST_CASE(prompts_get_with_data) {
     setup_db();
+    /* DB already has 2 defaults (ocr, parser). 'parser' insert is ignored (UNIQUE). */
     ASSERT_EQ(0, insert_test_prompt("ocr_system", "You are an OCR system."));
-    ASSERT_EQ(0, insert_test_prompt("parser", "Parse the receipt."));
+    insert_test_prompt("parser", "Parse the receipt."); /* ignored, name exists */
 
     PromptCollectCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     int result = db_backend_get_prompts(g_test_db, prompt_collect_cb, &ctx);
     ASSERT_EQ(0, result);
-    ASSERT_EQ(2, ctx.count);
+    ASSERT_EQ(3, ctx.count);
 
-    /* Results are ordered by name */
-    ASSERT_STR_EQ("ocr_system", ctx.prompts[0].name);
-    ASSERT_STR_EQ("You are an OCR system.", ctx.prompts[0].content);
-    ASSERT_STR_EQ("parser", ctx.prompts[1].name);
-    ASSERT_STR_EQ("Parse the receipt.", ctx.prompts[1].content);
+    /* Results are ordered by name: ocr, ocr_system, parser */
+    ASSERT_STR_EQ("ocr", ctx.prompts[0].name);
+    ASSERT_STR_EQ("ocr_system", ctx.prompts[1].name);
+    ASSERT_STR_EQ("You are an OCR system.", ctx.prompts[1].content);
+    ASSERT_STR_EQ("parser", ctx.prompts[2].name);
 
     teardown_db();
     TEST_PASS();
@@ -107,12 +111,18 @@ TEST_CASE(prompts_update) {
     setup_db();
     ASSERT_EQ(0, insert_test_prompt("ocr_system", "Old content."));
 
-    /* Get the prompt ID */
+    /* Get all prompts (2 defaults + ocr_system) and find ocr_system */
     PromptCollectCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     db_backend_get_prompts(g_test_db, prompt_collect_cb, &ctx);
-    ASSERT_EQ(1, ctx.count);
-    int64_t id = ctx.prompts[0].id;
+    int64_t id = 0;
+    for (int i = 0; i < ctx.count; i++) {
+        if (strcmp(ctx.prompts[i].name, "ocr_system") == 0) {
+            id = ctx.prompts[i].id;
+            break;
+        }
+    }
+    ASSERT_TRUE(id > 0);
 
     /* Update */
     int result = db_backend_update_prompt(g_test_db, id, "New content.");
@@ -122,8 +132,15 @@ TEST_CASE(prompts_update) {
     PromptCollectCtx ctx2;
     memset(&ctx2, 0, sizeof(ctx2));
     db_backend_get_prompts(g_test_db, prompt_collect_cb, &ctx2);
-    ASSERT_EQ(1, ctx2.count);
-    ASSERT_STR_EQ("New content.", ctx2.prompts[0].content);
+    int found = 0;
+    for (int i = 0; i < ctx2.count; i++) {
+        if (strcmp(ctx2.prompts[i].name, "ocr_system") == 0) {
+            ASSERT_STR_EQ("New content.", ctx2.prompts[i].content);
+            found = 1;
+            break;
+        }
+    }
+    ASSERT_TRUE(found);
 
     teardown_db();
     TEST_PASS();
@@ -203,14 +220,13 @@ TEST_CASE(prompt_fetcher_poll_empty) {
 
 TEST_CASE(prompt_fetcher_poll_no_change) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "Original content."));
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     PromptFetcher *pf = prompt_fetcher_new(g_test_db, 60, change_cb, &ctx);
     ASSERT_NOT_NULL(pf);
 
-    /* First poll: init cache */
+    /* First poll: init cache with the 2 default seeded prompts */
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
     ASSERT_EQ(0, ctx.count);
 
@@ -225,30 +241,36 @@ TEST_CASE(prompt_fetcher_poll_no_change) {
 
 TEST_CASE(prompt_fetcher_poll_detect_change) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "Original content."));
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     PromptFetcher *pf = prompt_fetcher_new(g_test_db, 60, change_cb, &ctx);
     ASSERT_NOT_NULL(pf);
 
-    /* First poll: init cache */
+    /* First poll: init cache with defaults */
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
     ASSERT_EQ(0, ctx.count);
 
-    /* Update the prompt in DB */
+    /* Update the 'ocr' prompt in DB */
     PromptCollectCtx pc;
     memset(&pc, 0, sizeof(pc));
     db_backend_get_prompts(g_test_db, prompt_collect_cb, &pc);
-    ASSERT_EQ(1, pc.count);
-    db_backend_update_prompt(g_test_db, pc.prompts[0].id, "Updated content.");
+    int64_t ocr_id = 0;
+    for (int i = 0; i < pc.count; i++) {
+        if (strcmp(pc.prompts[i].name, "ocr") == 0) {
+            ocr_id = pc.prompts[i].id;
+            break;
+        }
+    }
+    ASSERT_TRUE(ocr_id > 0);
+    db_backend_update_prompt(g_test_db, ocr_id, "Updated OCR content.");
 
     /* Second poll: should detect change */
     int changed = prompt_fetcher_poll(pf);
     ASSERT_EQ(1, changed);
     ASSERT_EQ(1, ctx.count);
     ASSERT_STR_EQ("ocr", ctx.names[0]);
-    ASSERT_STR_EQ("Updated content.", ctx.contents[0]);
+    ASSERT_STR_EQ("Updated OCR content.", ctx.contents[0]);
 
     /* Third poll: no further change */
     ctx.count = 0;
@@ -262,26 +284,25 @@ TEST_CASE(prompt_fetcher_poll_detect_change) {
 
 TEST_CASE(prompt_fetcher_poll_new_prompt) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "Original."));
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     PromptFetcher *pf = prompt_fetcher_new(g_test_db, 60, change_cb, &ctx);
     ASSERT_NOT_NULL(pf);
 
-    /* First poll: init cache with one prompt */
+    /* First poll: init cache with 2 default prompts */
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
     ASSERT_EQ(0, ctx.count);
 
-    /* Insert a new prompt */
-    ASSERT_EQ(0, insert_test_prompt("parser", "Parse receipts."));
+    /* Insert a brand-new prompt */
+    ASSERT_EQ(0, insert_test_prompt("my_custom", "Custom prompt."));
 
     /* Second poll: should detect new prompt */
     int changed = prompt_fetcher_poll(pf);
     ASSERT_EQ(1, changed);
     ASSERT_EQ(1, ctx.count);
-    ASSERT_STR_EQ("parser", ctx.names[0]);
-    ASSERT_STR_EQ("Parse receipts.", ctx.contents[0]);
+    ASSERT_STR_EQ("my_custom", ctx.names[0]);
+    ASSERT_STR_EQ("Custom prompt.", ctx.contents[0]);
 
     prompt_fetcher_free(pf);
     teardown_db();
@@ -290,8 +311,7 @@ TEST_CASE(prompt_fetcher_poll_new_prompt) {
 
 TEST_CASE(prompt_fetcher_poll_multiple_changes) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "OCR v1."));
-    ASSERT_EQ(0, insert_test_prompt("parser", "Parser v1."));
+    /* DB has 2 defaults (ocr, parser). Update both. */
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
@@ -301,7 +321,7 @@ TEST_CASE(prompt_fetcher_poll_multiple_changes) {
     /* First poll: init */
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
 
-    /* Update both prompts */
+    /* Update both default prompts */
     PromptCollectCtx pc;
     memset(&pc, 0, sizeof(pc));
     db_backend_get_prompts(g_test_db, prompt_collect_cb, &pc);
@@ -342,7 +362,6 @@ TEST_CASE(prompt_fetcher_lifecycle) {
 
 TEST_CASE(prompt_fetcher_tick_skips_within_interval) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "Content."));
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));

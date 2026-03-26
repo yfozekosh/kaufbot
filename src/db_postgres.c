@@ -100,6 +100,49 @@ static DBBackend *postgres_open(const Config *cfg) {
     }
     db->conn = conn;
 
+    /* Seed default prompts if table is empty */
+    const char *seed_ocr =
+        "INSERT INTO prompts (name, content)"
+        " SELECT 'ocr',"
+        "  'Extract ALL text from this image or document. This document is a receipt from one"
+        " of the well-know german supermarkets."
+        " Preserve the original layout and formatting as closely as possible."
+        " Items on the same line in the image/pdf should stay on the same line in the output"
+        " text."
+        " If the line starts with the blank text - use spaces to align text with the text"
+        " position on the image/document."
+        " If there is no text, respond with: [NO TEXT FOUND]."
+        " Output only the extracted text, nothing else.'"
+        " WHERE NOT EXISTS (SELECT 1 FROM prompts)"
+        " ON CONFLICT (name) DO NOTHING;";
+    PQexec(conn, seed_ocr);
+
+    const char *seed_parser =
+        "INSERT INTO prompts (name, content)"
+        " SELECT 'parser',"
+        "  'You are an expert German supermarket receipt parsing tool. You are given text"
+        " extracted from a receipt photo via OCR. The layout is important, as item"
+        " descriptions often span multiple lines."
+        " Your task is to extract the data and return it strictly as a JSON document"
+        " matching the schema below. Return ONLY the raw JSON.'"
+        " || '"
+        " Extraction Rules:"
+        " Multi-line Items: Merge wrapped lines into a single original_name."
+        " Translation: Provide an accurate English translation."
+        " Categorization: Assign a broad category and sub_category."
+        " Amounts and Units: Default to 1 if not stated. Extract unit from name."
+        " Other Info: Group remaining data into the other object.'"
+        " || '"
+        " JSON Schema: {store_information:{name,address},"
+        " line_items:[{id,original_name,english_translation,category,sub_category,"
+        " price,tax_group,amount,unit_of_measure}],"
+        " total_sum,number_of_items,"
+        " other:{date,time,receipt_number,payment_method,tax_details,card_details,"
+        " raw_unmapped_text}}'"
+        " WHERE NOT EXISTS (SELECT 1 FROM prompts WHERE name='parser')"
+        " ON CONFLICT (name) DO NOTHING;";
+    PQexec(conn, seed_parser);
+
     DBBackend *backend = calloc(1, sizeof(DBBackend));
     if (!backend) {
         PQfinish(conn);
