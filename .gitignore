@@ -56,6 +56,16 @@ third_party/*/dist/
 *.gcno
 *.gcda
 coverage/
+test_bot
+test_config
+test_db
+test_edge_cases
+test_json
+test_processor
+test_prompts
+test_storage
+test_utils
+tgbot
 
 # Migrations (local copies)
 migrations/*.local.sql

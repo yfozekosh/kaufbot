@@ -1,9 +1,9 @@
 #include "cJSON.h"
 #include "config.h"
+#include "http_client.h"
 #include "storage_backend.h"
 #include "utils.h"
 
-#include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,18 +21,21 @@ typedef struct {
     int is_v2_key;
 } SupabaseStorage;
 
-static struct curl_slist *build_auth_headers(const SupabaseStorage *storage) {
-    struct curl_slist *headers = NULL;
+static HttpHeaders *build_auth_headers(const SupabaseStorage *storage) {
+    HttpHeaders *headers = http_headers_new(3);
+    if (!headers)
+        return NULL;
+
     char hdr[MAX_TOKEN_LEN + 64];
 
     if (storage->is_v2_key) {
-        snprintf(hdr, sizeof(hdr), "apikey: %s", storage->anon_key);
-        headers = curl_slist_append(headers, hdr);
+        snprintf(hdr, sizeof(hdr), "%s", storage->anon_key);
+        http_headers_add(headers, "apikey", hdr);
     } else {
-        snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s", storage->anon_key);
-        headers = curl_slist_append(headers, hdr);
-        snprintf(hdr, sizeof(hdr), "apikey: %s", storage->anon_key);
-        headers = curl_slist_append(headers, hdr);
+        snprintf(hdr, sizeof(hdr), "Bearer %s", storage->anon_key);
+        http_headers_add(headers, "Authorization", hdr);
+        snprintf(hdr, sizeof(hdr), "%s", storage->anon_key);
+        http_headers_add(headers, "apikey", hdr);
     }
     return headers;
 }
@@ -85,46 +88,37 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
              filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl) {
-        LOG_ERROR("curl_easy_init failed");
+    HttpClient *http = http_client_new();
+    if (!http) {
+        LOG_ERROR("failed to create HTTP client");
         return -1;
     }
 
-    struct curl_slist *headers = build_auth_headers(storage);
-    headers = curl_slist_append(headers, "Content-Type: application/octet-stream");
-    headers = curl_slist_append(headers, "x-upsert: true");
-
-    GrowBuf resp = {0};
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t)len);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("upload failed: %s", curl_easy_strerror(res));
-        growbuf_free(&resp);
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
         return -1;
     }
 
-    if (http_code != 200 && http_code != 201) {
-        LOG_ERROR("upload HTTP error: %ld", http_code);
-        growbuf_free(&resp);
+    /* Add Content-Type and x-upsert headers */
+    http_headers_add(auth_headers, "Content-Type", "application/octet-stream");
+    http_headers_add(auth_headers, "x-upsert", "true");
+
+    HttpResponse resp;
+    int rc = http_client_put(http, url, data, len, &resp);
+
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("upload failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
         return -1;
     }
 
-    growbuf_free(&resp);
+    http_response_free(&resp);
+    http_headers_free(auth_headers);
+    http_client_free(http);
+
     LOG_INFO("file uploaded successfully to Supabase: %s", filename);
     return 0;
 }
@@ -141,30 +135,33 @@ static int supabase_file_exists(StorageBackend *backend, const char *filename) {
     snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
              filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *http = http_client_new();
+    if (!http)
         return -1;
 
-    struct curl_slist *headers = build_auth_headers(storage);
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_HEAD_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("existence check failed: %s", curl_easy_strerror(res));
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
         return -1;
     }
 
-    return (http_code == 200) ? 1 : 0;
+    HttpResponse resp;
+    int rc = http_client_head(http, url, SUPABASE_HTTP_HEAD_TIMEOUT_SECS, &resp);
+
+    if (rc != 0) {
+        LOG_ERROR("existence check failed: %s", resp.error);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
+        return -1;
+    }
+
+    int exists = resp.success ? 1 : 0;
+    http_response_free(&resp);
+    http_headers_free(auth_headers);
+    http_client_free(http);
+
+    return exists;
 }
 
 static char *supabase_public_url(const SupabaseStorage *storage, const char *filename) {
@@ -183,8 +180,8 @@ static char *supabase_signed_url(const SupabaseStorage *storage, const char *fil
     snprintf(sign_url, sizeof(sign_url), "%s/storage/v1/object/sign/%s/%s", storage->base_url,
              storage->bucket, filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *http = http_client_new();
+    if (!http)
         return NULL;
 
     cJSON *body = cJSON_CreateObject();
@@ -192,37 +189,34 @@ static char *supabase_signed_url(const SupabaseStorage *storage, const char *fil
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
     if (!body_str) {
-        curl_easy_cleanup(curl);
+        http_client_free(http);
         return NULL;
     }
 
-    GrowBuf resp = {0};
-    struct curl_slist *headers = build_auth_headers(storage);
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        free(body_str);
+        http_client_free(http);
+        return NULL;
+    }
+    http_headers_add(auth_headers, "Content-Type", "application/json");
 
-    curl_easy_setopt(curl, CURLOPT_URL, sign_url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_SIGN_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    HttpResponse resp;
+    int rc = http_client_post_json(http, sign_url, body_str, &resp);
     free(body_str);
 
-    if (res != CURLE_OK || http_code != 200) {
-        LOG_ERROR("failed to generate signed URL");
-        growbuf_free(&resp);
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("failed to generate signed URL (HTTP %ld)", (long)resp.status_code);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
         return NULL;
     }
 
-    cJSON *json = cJSON_Parse(resp.data);
-    growbuf_free(&resp);
+    cJSON *json = cJSON_Parse(resp.body);
+    http_response_free(&resp);
+    http_headers_free(auth_headers);
+    http_client_free(http);
 
     if (!json) {
         LOG_ERROR("failed to parse signed URL response");
@@ -248,25 +242,29 @@ static int supabase_check_public_access(const SupabaseStorage *storage, const ch
     snprintf(url, sizeof(url), "%s/storage/v1/object/public/%s/%s", storage->base_url,
              storage->bucket, filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *http = http_client_new();
+    if (!http)
         return 0;
 
-    struct curl_slist *headers = build_auth_headers(storage);
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
+        return 0;
+    }
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_HEAD_TIMEOUT_SECS);
+    HttpResponse resp;
+    int rc = http_client_head(http, url, SUPABASE_HTTP_HEAD_TIMEOUT_SECS, &resp);
 
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    int accessible = 0;
+    if (rc == 0 && resp.success) {
+        accessible = 1;
+    }
 
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    http_response_free(&resp);
+    http_headers_free(auth_headers);
+    http_client_free(http);
 
-    return (res == CURLE_OK && http_code == 200);
+    return accessible;
 }
 
 static int supabase_delete_file(StorageBackend *backend, const char *filename) {
@@ -277,40 +275,47 @@ static int supabase_delete_file(StorageBackend *backend, const char *filename) {
 
     LOG_DEBUG("deleting file from Supabase: %s", filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *http = http_client_new();
+    if (!http)
         return -1;
 
-    struct curl_slist *headers = build_auth_headers(storage);
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("supabase delete failed: %s", curl_easy_strerror(res));
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
         return -1;
     }
 
-    if (http_code == 404) {
+    HttpResponse resp;
+    int rc = http_client_delete(http, url, &resp);
+
+    if (rc != 0) {
+        LOG_ERROR("supabase delete failed: %s", resp.error);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
+        return -1;
+    }
+
+    if (resp.status_code == HTTP_STATUS_NOT_FOUND) {
         LOG_DEBUG("file not found in Supabase: %s", filename);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
         return 1;
     }
 
-    if (http_code != 200 && http_code != 204) {
-        LOG_ERROR("supabase delete returned HTTP %ld", http_code);
+    if (!resp.success) {
+        LOG_ERROR("supabase delete returned HTTP %ld", (long)resp.status_code);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
         return -1;
     }
 
     LOG_DEBUG("file deleted from Supabase: %s", filename);
+    http_response_free(&resp);
+    http_headers_free(auth_headers);
+    http_client_free(http);
     return 0;
 }
 
@@ -331,39 +336,36 @@ static char *supabase_read_text(StorageBackend *backend, const char *filename) {
     snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
              filename);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *http = http_client_new();
+    if (!http)
         return NULL;
 
-    struct curl_slist *headers = build_auth_headers(storage);
-    GrowBuf resp = {0};
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("supabase read failed: %s", curl_easy_strerror(res));
-        growbuf_free(&resp);
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
         return NULL;
     }
 
-    if (http_code != 200) {
-        LOG_ERROR("supabase read returned HTTP %ld for %s", http_code, filename);
-        growbuf_free(&resp);
+    HttpResponse resp;
+    int rc = http_client_get(http, url, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
+
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("supabase read failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
         return NULL;
     }
 
-    return resp.data;
+    http_headers_free(auth_headers);
+    http_client_free(http);
+
+    /* Transfer ownership of body to caller */
+    char *text = resp.body;
+    resp.body = NULL;
+    http_response_free(&resp);
+
+    return text;
 }
 
 /* ── backend ops ──────────────────────────────────────────────────────────── */

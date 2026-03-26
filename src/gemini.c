@@ -1,22 +1,21 @@
 #include "gemini.h"
 #include "cJSON.h"
 #include "config.h"
+#include "http_client.h"
 #include "storage.h"
 #include "utils.h"
 
-#include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#define GEMINI_API_BASE                  "https://generativelanguage.googleapis.com/v1beta/models"
-#define GEMINI_MAX_API_KEY_LEN           256
-#define GEMINI_MAX_MODEL_LEN             128
-#define GEMINI_URL_BUF_LEN               512
-#define GEMINI_HTTP_TIMEOUT_SECS         600L
-#define GEMINI_HTTP_CONNECT_TIMEOUT_SECS 15L
-#define GEMINI_FALLBACK_MODEL            "gemma-3-27b-it"
+#define GEMINI_API_BASE          "https://generativelanguage.googleapis.com/v1beta/models"
+#define GEMINI_MAX_API_KEY_LEN   256
+#define GEMINI_MAX_MODEL_LEN     128
+#define GEMINI_URL_BUF_LEN       512
+#define GEMINI_HTTP_TIMEOUT_SECS 600L
+#define GEMINI_FALLBACK_MODEL    "gemma-3-27b-it"
 
 struct GeminiClient {
     char api_key[GEMINI_MAX_API_KEY_LEN];
@@ -235,61 +234,45 @@ retry:
              client->api_key);
     LOG_DEBUG("sending request to Gemini API (model: %s)", active_model);
 
-    CURL *curl = curl_easy_init();
-    if (!curl) {
-        LOG_ERROR("curl_easy_init failed");
+    /* Create HTTP client for this request */
+    HttpClient *http = http_client_new();
+    if (!http) {
+        LOG_ERROR("failed to create HTTP client");
         return NULL;
     }
 
-    GrowBuf resp = {0};
+    HttpResponse resp;
+    int rc = http_client_post_json(http, url, body, &resp);
 
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    if (!headers) {
-        curl_easy_cleanup(curl);
-        return NULL;
-    }
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, GEMINI_HTTP_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, GEMINI_HTTP_CONNECT_TIMEOUT_SECS);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("curl error: %s", curl_easy_strerror(res));
-        free(resp.data);
+    if (rc != 0) {
+        LOG_ERROR("HTTP request failed: %s", resp.error);
+        http_response_free(&resp);
+        http_client_free(http);
         return NULL;
     }
 
     /* Handle 429 rate limit - switch to fallback model and retry once */
-    if (http_code == 429 && !tried_fallback && client->fallback_enabled) {
+    if (resp.status_code == HTTP_STATUS_TOO_MANY_REQUESTS && !tried_fallback &&
+        client->fallback_enabled) {
         LOG_WARN("gemini rate limited (429), switching to fallback model: %s",
                  client->fallback_model);
         client->fallback_until = next_midnight();
-        free(resp.data);
+        http_response_free(&resp);
+        http_client_free(http);
         tried_fallback = 1;
         goto retry;
     }
 
-    if (http_code != 200) {
-        LOG_ERROR("HTTP %ld: %.400s", http_code, resp.data ? resp.data : "(empty)");
-        free(resp.data);
+    if (!resp.success) {
+        LOG_ERROR("HTTP %ld: %.400s", (long)resp.status_code, resp.body ? resp.body : "(empty)");
+        http_response_free(&resp);
+        http_client_free(http);
         return NULL;
     }
 
     /* Log token usage from usageMetadata if present */
     {
-        cJSON *meta_json = cJSON_Parse(resp.data);
+        cJSON *meta_json = cJSON_Parse(resp.body);
         if (meta_json) {
             cJSON *usage = cJSON_GetObjectItem(meta_json, "usageMetadata");
             if (usage) {
@@ -305,8 +288,9 @@ retry:
         }
     }
 
-    char *result = gemini_parse_api_response(resp.data);
-    free(resp.data);
+    char *result = gemini_parse_api_response(resp.body);
+    http_response_free(&resp);
+    http_client_free(http);
     return result;
 }
 

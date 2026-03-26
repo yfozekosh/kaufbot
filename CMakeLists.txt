@@ -36,6 +36,7 @@ set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
     ${CMAKE_SOURCE_DIR}/src/storage_local.c
     ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
+    ${CMAKE_SOURCE_DIR}/src/http_client.c
     ${CJSON_DIR}/cJSON.c
 )
 
@@ -140,6 +141,12 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/storage_local.c
     )
 
+    add_test_module(test_http_client
+        ${CMAKE_SOURCE_DIR}/tests/test_http_client.c
+        ${CMAKE_SOURCE_DIR}/src/http_client.c
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+    )
+
     add_test_module(test_bot
         ${CMAKE_SOURCE_DIR}/tests/test_bot.c
         ${CMAKE_SOURCE_DIR}/src/bot.c
@@ -150,6 +157,7 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
         ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
+        ${CMAKE_SOURCE_DIR}/src/http_client.c
     )
 
     add_test_module(test_prompts
@@ -177,6 +185,7 @@ if(CLANG_TIDY_EXE)
             ${CMAKE_SOURCE_DIR}/src/db_postgres.c
             ${CMAKE_SOURCE_DIR}/src/storage_supabase.c
             ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
+            ${CMAKE_SOURCE_DIR}/src/http_client.c
         COMMENT "Running clang-tidy on source files"
         VERBATIM
     )
@@ -213,6 +222,7 @@ if(CLANG_FORMAT_EXE)
         ${CMAKE_SOURCE_DIR}/tests/test_edge_cases.c
         ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
         ${CMAKE_SOURCE_DIR}/tests/test_prompts.c
+        ${CMAKE_SOURCE_DIR}/tests/test_http_client.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
         ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
         ${CMAKE_SOURCE_DIR}/src/processor.h
@@ -224,6 +234,7 @@ if(CLANG_FORMAT_EXE)
         ${CMAKE_SOURCE_DIR}/src/storage.h
         ${CMAKE_SOURCE_DIR}/src/storage_backend.h
         ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.h
+        ${CMAKE_SOURCE_DIR}/src/http_client.h
     )
 
     add_custom_target(format

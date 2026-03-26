@@ -1,10 +1,10 @@
 #include "bot.h"
 #include "cJSON.h"
 #include "config.h"
+#include "http_client.h"
 #include "prompt_fetcher.h"
 #include "utils.h"
 
-#include <curl/curl.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,8 +18,6 @@
 #define MAX_FILE_MB                  20
 #define MAX_LIST_ENTRIES             10
 #define HTTP_TIMEOUT_SECS            60L
-#define HTTP_CONNECT_TIMEOUT_SECS    10L
-#define HTTP_POST_TIMEOUT_SECS       30L
 #define HTTP_DOWNLOAD_TIMEOUT_SECS   120L
 #define RECONNECT_DELAY_SECS         5
 #define RETRY_DELAY_SECS             2
@@ -47,83 +45,56 @@ struct TgBot {
 
 static char *http_get(const char *url, long timeout_sec) {
     LOG_DEBUG("GET %s (timeout=%lds)", url, timeout_sec);
-    CURL *curl = curl_easy_init();
-    if (!curl)
+
+    /* Create temporary client for this request */
+    HttpClient *client = http_client_new();
+    if (!client)
         return NULL;
 
-    GrowBuf buf = {0};
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec + HTTP_CONNECT_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, HTTP_CONNECT_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+    HttpResponse resp;
+    int rc = http_client_get(client, url, timeout_sec, &resp);
 
-    CURLcode res = curl_easy_perform(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("GET failed: %s", curl_easy_strerror(res));
-        curl_easy_cleanup(curl);
-        growbuf_free(&buf);
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("GET failed: %s", resp.error);
+        http_response_free(&resp);
+        http_client_free(client);
         return NULL;
     }
 
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    curl_easy_cleanup(curl);
+    /* Transfer ownership of body to caller */
+    char *body = resp.body;
+    resp.body = NULL;
 
-    if (http_code != 200) {
-        LOG_ERROR("GET %s returned HTTP %ld: %.400s", url, http_code,
-                  buf.data ? buf.data : "(empty)");
-        growbuf_free(&buf);
-        return NULL;
-    }
-    return buf.data;
+    http_response_free(&resp);
+    http_client_free(client);
+    return body;
 }
 
 static char *http_post_json(const char *url, const char *json_body) {
     LOG_DEBUG("POST %s", url);
-    CURL *curl = curl_easy_init();
-    if (!curl)
+
+    /* Create temporary client for this request */
+    HttpClient *client = http_client_new();
+    if (!client)
         return NULL;
 
-    GrowBuf buf = {0};
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    if (!headers) {
-        curl_easy_cleanup(curl);
-        return NULL;
-    }
+    HttpResponse resp;
+    int rc = http_client_post_json(client, url, json_body, &resp);
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, HTTP_POST_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
-
-    CURLcode res = curl_easy_perform(curl);
-    curl_slist_free_all(headers);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("POST failed: %s", curl_easy_strerror(res));
-        curl_easy_cleanup(curl);
-        growbuf_free(&buf);
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("POST failed: %s", resp.error);
+        http_response_free(&resp);
+        http_client_free(client);
         return NULL;
     }
 
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    curl_easy_cleanup(curl);
+    /* Transfer ownership of body to caller */
+    char *body = resp.body;
+    resp.body = NULL;
 
-    if (http_code != 200) {
-        LOG_ERROR("POST %s returned HTTP %ld: %.400s", url, http_code,
-                  buf.data ? buf.data : "(empty)");
-        growbuf_free(&buf);
-        return NULL;
-    }
-    return buf.data;
+    http_response_free(&resp);
+    http_client_free(client);
+    return body;
 }
 
 /* ── Telegram helpers ─────────────────────────────────────────────────────── */
@@ -311,39 +282,27 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path, size_t
     snprintf(url, sizeof(url), "%s%s/%s", TG_FILE_BASE, bot->cfg->telegram_token, file_path);
     LOG_DEBUG("downloading file: %s", file_path);
 
-    CURL *curl = curl_easy_init();
-    if (!curl)
+    HttpClient *client = http_client_new();
+    if (!client)
         return NULL;
 
-    GrowBuf buf = {0};
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, HTTP_DOWNLOAD_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, HTTP_CONNECT_TIMEOUT_SECS);
-    curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+    HttpResponse resp;
+    int rc = http_client_get(client, url, HTTP_DOWNLOAD_TIMEOUT_SECS, &resp);
 
-    CURLcode res = curl_easy_perform(curl);
-
-    if (res != CURLE_OK) {
-        LOG_ERROR("download failed: %s", curl_easy_strerror(res));
-        curl_easy_cleanup(curl);
-        growbuf_free(&buf);
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("download failed: %s", resp.error);
+        http_response_free(&resp);
+        http_client_free(client);
         return NULL;
     }
 
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    curl_easy_cleanup(curl);
+    *out_len = resp.body_len;
+    uint8_t *data = (uint8_t *)resp.body;
+    resp.body = NULL; /* Transfer ownership */
 
-    if (http_code != 200) {
-        LOG_ERROR("download %s returned HTTP %ld", file_path, http_code);
-        growbuf_free(&buf);
-        return NULL;
-    }
-
-    *out_len = buf.len;
-    return (uint8_t *)buf.data;
+    http_response_free(&resp);
+    http_client_free(client);
+    return data;
 }
 
 /* ── update handlers ─────────────────────────────────────────────────────── */
@@ -705,18 +664,7 @@ static void dispatch_update(TgBot *bot, cJSON *update) {
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-static int g_curl_initialized = 0;
-
 TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db, StorageBackend *storage) {
-    if (!g_curl_initialized) {
-        CURLcode rc = curl_global_init(CURL_GLOBAL_DEFAULT);
-        if (rc != CURLE_OK) {
-            LOG_ERROR("curl_global_init failed: %s", curl_easy_strerror(rc));
-            return NULL;
-        }
-        g_curl_initialized = 1;
-    }
-
     TgBot *bot = calloc(1, sizeof(TgBot));
     if (!bot)
         return NULL;
@@ -740,10 +688,6 @@ void bot_free(TgBot *bot) {
     if (bot) {
         prompt_fetcher_free(bot->prompt_fetcher);
         free(bot);
-        if (g_curl_initialized) {
-            curl_global_cleanup();
-            g_curl_initialized = 0;
-        }
     }
 }
 
