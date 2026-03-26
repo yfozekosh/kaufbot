@@ -48,6 +48,7 @@ int prompt_fetcher_poll(PromptFetcher *pf) {
         return -1;
 
     Prompt prompts[MAX_CACHED_PROMPTS];
+    memset(prompts, 0, sizeof(prompts));
     CollectCtx ctx = {.prompts = prompts, .count = 0, .capacity = MAX_CACHED_PROMPTS};
 
     if (db_backend_get_prompts(pf->db, collect_cb, &ctx) != 0) {
