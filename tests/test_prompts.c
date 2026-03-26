@@ -179,7 +179,6 @@ TEST_CASE(prompt_fetcher_null_args) {
     pf = prompt_fetcher_new(NULL, -1, change_cb, NULL);
     ASSERT_TRUE(pf == NULL);
 
-    prompt_fetcher_stop(NULL);
     prompt_fetcher_free(NULL);
     TEST_PASS();
 }
@@ -197,7 +196,6 @@ TEST_CASE(prompt_fetcher_poll_empty) {
     ASSERT_EQ(0, result);
     ASSERT_EQ(0, ctx.count);
 
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
     TEST_PASS();
@@ -220,7 +218,6 @@ TEST_CASE(prompt_fetcher_poll_no_change) {
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
     ASSERT_EQ(0, ctx.count);
 
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
     TEST_PASS();
@@ -258,7 +255,6 @@ TEST_CASE(prompt_fetcher_poll_detect_change) {
     ASSERT_EQ(0, prompt_fetcher_poll(pf));
     ASSERT_EQ(0, ctx.count);
 
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
     TEST_PASS();
@@ -287,7 +283,6 @@ TEST_CASE(prompt_fetcher_poll_new_prompt) {
     ASSERT_STR_EQ("parser", ctx.names[0]);
     ASSERT_STR_EQ("Parse receipts.", ctx.contents[0]);
 
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
     TEST_PASS();
@@ -319,7 +314,6 @@ TEST_CASE(prompt_fetcher_poll_multiple_changes) {
     ASSERT_EQ(2, changed);
     ASSERT_EQ(2, ctx.count);
 
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
     TEST_PASS();
@@ -331,20 +325,45 @@ TEST_CASE(prompt_fetcher_poll_null) {
     TEST_PASS();
 }
 
-/* ── Prompt fetcher thread lifecycle ──────────────────────────────────────── */
+/* ── Prompt fetcher lifecycle & tick ──────────────────────────────────────── */
 
-TEST_CASE(prompt_fetcher_thread_lifecycle) {
+TEST_CASE(prompt_fetcher_lifecycle) {
     setup_db();
-    ASSERT_EQ(0, insert_test_prompt("ocr", "Content."));
 
     ChangeCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     PromptFetcher *pf = prompt_fetcher_new(g_test_db, 1, change_cb, &ctx);
     ASSERT_NOT_NULL(pf);
 
-    /* Let it run briefly, then stop */
-    prompt_fetcher_stop(pf);
     prompt_fetcher_free(pf);
     teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(prompt_fetcher_tick_skips_within_interval) {
+    setup_db();
+    ASSERT_EQ(0, insert_test_prompt("ocr", "Content."));
+
+    ChangeCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    PromptFetcher *pf = prompt_fetcher_new(g_test_db, 3600, change_cb, &ctx);
+    ASSERT_NOT_NULL(pf);
+
+    /* First tick: initializes cache */
+    int result = prompt_fetcher_tick(pf);
+    ASSERT_EQ(0, result);
+
+    /* Second tick within interval: should skip */
+    result = prompt_fetcher_tick(pf);
+    ASSERT_EQ(0, result);
+
+    prompt_fetcher_free(pf);
+    teardown_db();
+    TEST_PASS();
+}
+
+TEST_CASE(prompt_fetcher_tick_null) {
+    int result = prompt_fetcher_tick(NULL);
+    ASSERT_EQ(-1, result);
     TEST_PASS();
 }

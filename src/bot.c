@@ -604,7 +604,7 @@ TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db, StorageBa
     bot->prompt_fetcher =
         prompt_fetcher_new(db, PROMPT_REFRESH_INTERVAL_SECS, on_prompt_change, bot);
     if (!bot->prompt_fetcher) {
-        LOG_WARN("failed to start prompt fetcher, continuing without it");
+        LOG_WARN("failed to create prompt fetcher, continuing without it");
     }
 
     return bot;
@@ -612,7 +612,6 @@ TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db, StorageBa
 
 void bot_free(TgBot *bot) {
     if (bot) {
-        prompt_fetcher_stop(bot->prompt_fetcher);
         prompt_fetcher_free(bot->prompt_fetcher);
         free(bot);
         if (g_curl_initialized) {
@@ -680,6 +679,8 @@ void bot_start(TgBot *bot) {
         }
 
         cJSON_Delete(json);
+
+        prompt_fetcher_tick(bot->prompt_fetcher);
     }
 
     LOG_INFO("polling loop stopped");
