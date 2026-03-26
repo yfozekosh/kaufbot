@@ -60,10 +60,21 @@ static char *http_get(const char *url, long timeout_sec) {
     curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
 
     CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
         LOG_ERROR("GET failed: %s", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        growbuf_free(&buf);
+        return NULL;
+    }
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_cleanup(curl);
+
+    if (http_code != 200) {
+        LOG_ERROR("GET %s returned HTTP %ld: %.400s", url, http_code,
+                  buf.data ? buf.data : "(empty)");
         growbuf_free(&buf);
         return NULL;
     }
@@ -94,10 +105,21 @@ static char *http_post_json(const char *url, const char *json_body) {
 
     CURLcode res = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
         LOG_ERROR("POST failed: %s", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        growbuf_free(&buf);
+        return NULL;
+    }
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_cleanup(curl);
+
+    if (http_code != 200) {
+        LOG_ERROR("POST %s returned HTTP %ld: %.400s", url, http_code,
+                  buf.data ? buf.data : "(empty)");
         growbuf_free(&buf);
         return NULL;
     }
@@ -105,6 +127,30 @@ static char *http_post_json(const char *url, const char *json_body) {
 }
 
 /* ── Telegram helpers ─────────────────────────────────────────────────────── */
+
+/* Check Telegram API JSON response for errors. Logs on failure, silently
+ * ignores NULL input. Returns 0 on ok=true, -1 on error/parse failure. */
+static int tg_check_ok(const char *resp, const char *context) {
+    if (!resp)
+        return -1;
+    cJSON *json = cJSON_Parse(resp);
+    if (!json) {
+        LOG_ERROR("%s: failed to parse response", context);
+        return -1;
+    }
+    cJSON *ok = cJSON_GetObjectItem(json, "ok");
+    if (!cJSON_IsTrue(ok)) {
+        cJSON *desc = cJSON_GetObjectItem(json, "description");
+        cJSON *err_code = cJSON_GetObjectItem(json, "error_code");
+        LOG_ERROR("%s: %s (code: %d)", context,
+                  cJSON_IsString(desc) ? desc->valuestring : "unknown",
+                  cJSON_IsNumber(err_code) ? err_code->valueint : -1);
+        cJSON_Delete(json);
+        return -1;
+    }
+    cJSON_Delete(json);
+    return 0;
+}
 
 void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
     if (!text) {
@@ -127,6 +173,7 @@ void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
 
     char *resp = http_post_json(url, body);
     free(body);
+    tg_check_ok(resp, "sendMessage");
     free(resp);
 }
 
@@ -176,6 +223,7 @@ static void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, con
 
     char *resp = http_post_json(url, body);
     free(body);
+    tg_check_ok(resp, "sendMessage (keyboard)");
     free(resp);
 }
 
@@ -196,6 +244,7 @@ static void tg_answer_callback_query(const TgBot *bot, const char *query_id, con
 
     char *resp = http_post_json(url, body);
     free(body);
+    tg_check_ok(resp, "answerCallbackQuery");
     free(resp);
 }
 
@@ -215,6 +264,7 @@ static void tg_delete_message(const TgBot *bot, int64_t chat_id, int64_t message
 
     char *resp = http_post_json(url, body);
     free(body);
+    tg_check_ok(resp, "deleteMessage");
     free(resp);
 }
 
@@ -236,6 +286,14 @@ static char *tg_get_file_path(const TgBot *bot, const char *file_id) {
     free(resp);
     if (!json)
         return NULL;
+
+    cJSON *ok = cJSON_GetObjectItem(json, "ok");
+    if (!cJSON_IsTrue(ok)) {
+        cJSON *desc = cJSON_GetObjectItem(json, "description");
+        LOG_ERROR("getFile: %s", cJSON_IsString(desc) ? desc->valuestring : "unknown");
+        cJSON_Delete(json);
+        return NULL;
+    }
 
     cJSON *result = cJSON_GetObjectItem(json, "result");
     cJSON *file_path = result ? cJSON_GetObjectItem(result, "file_path") : NULL;
@@ -266,10 +324,20 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path, size_t
     curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
 
     CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
         LOG_ERROR("download failed: %s", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        growbuf_free(&buf);
+        return NULL;
+    }
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_cleanup(curl);
+
+    if (http_code != 200) {
+        LOG_ERROR("download %s returned HTTP %ld", file_path, http_code);
         growbuf_free(&buf);
         return NULL;
     }
