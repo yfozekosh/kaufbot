@@ -6,8 +6,10 @@
 
 typedef struct GeminiClient GeminiClient;
 
-/* Create a Gemini client. api_key and model are copied internally. */
-GeminiClient *gemini_new(const char *api_key, const char *model);
+/* Create a Gemini client. api_key, model, and fallback_model are copied internally.
+ * fallback_enabled controls whether rate-limit fallback is active. */
+GeminiClient *gemini_new(const char *api_key, const char *model, const char *fallback_model,
+                         int fallback_enabled);
 
 /* Free the client. */
 void gemini_free(GeminiClient *client);

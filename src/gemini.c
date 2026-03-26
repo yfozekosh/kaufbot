@@ -22,6 +22,7 @@ struct GeminiClient {
     char api_key[GEMINI_MAX_API_KEY_LEN];
     char model[GEMINI_MAX_MODEL_LEN];
     char fallback_model[GEMINI_MAX_MODEL_LEN];
+    int fallback_enabled;
     time_t fallback_until;
 };
 
@@ -182,7 +183,8 @@ static const char *parse_prompt(void) {
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-GeminiClient *gemini_new(const char *api_key, const char *model) {
+GeminiClient *gemini_new(const char *api_key, const char *model, const char *fallback_model,
+                         int fallback_enabled) {
     if (!api_key || !model)
         return NULL;
 
@@ -191,7 +193,9 @@ GeminiClient *gemini_new(const char *api_key, const char *model) {
         return NULL;
     snprintf(c->api_key, GEMINI_MAX_API_KEY_LEN, "%s", api_key);
     snprintf(c->model, GEMINI_MAX_MODEL_LEN, "%s", model);
-    snprintf(c->fallback_model, GEMINI_MAX_MODEL_LEN, "%s", GEMINI_FALLBACK_MODEL);
+    snprintf(c->fallback_model, GEMINI_MAX_MODEL_LEN, "%s",
+             fallback_model ? fallback_model : GEMINI_FALLBACK_MODEL);
+    c->fallback_enabled = fallback_enabled;
     c->fallback_until = 0;
     return c;
 }
@@ -268,7 +272,7 @@ retry:
     }
 
     /* Handle 429 rate limit - switch to fallback model and retry once */
-    if (http_code == 429 && !tried_fallback) {
+    if (http_code == 429 && !tried_fallback && client->fallback_enabled) {
         LOG_WARN("gemini rate limited (429), switching to fallback model: %s",
                  client->fallback_model);
         client->fallback_until = next_midnight();
@@ -281,6 +285,24 @@ retry:
         LOG_ERROR("HTTP %ld: %.400s", http_code, resp.data ? resp.data : "(empty)");
         free(resp.data);
         return NULL;
+    }
+
+    /* Log token usage from usageMetadata if present */
+    {
+        cJSON *meta_json = cJSON_Parse(resp.data);
+        if (meta_json) {
+            cJSON *usage = cJSON_GetObjectItem(meta_json, "usageMetadata");
+            if (usage) {
+                cJSON *prompt = cJSON_GetObjectItem(usage, "promptTokenCount");
+                cJSON *candidates = cJSON_GetObjectItem(usage, "candidatesTokenCount");
+                cJSON *total = cJSON_GetObjectItem(usage, "totalTokenCount");
+                LOG_INFO("gemini tokens — prompt: %d, candidates: %d, total: %d",
+                         (prompt && cJSON_IsNumber(prompt)) ? prompt->valueint : -1,
+                         (candidates && cJSON_IsNumber(candidates)) ? candidates->valueint : -1,
+                         (total && cJSON_IsNumber(total)) ? total->valueint : -1);
+            }
+            cJSON_Delete(meta_json);
+        }
     }
 
     char *result = gemini_parse_api_response(resp.data);
