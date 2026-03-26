@@ -308,3 +308,60 @@ TEST_CASE(storage_backend_delete_null) {
     ASSERT_EQ(-1, result);
     TEST_PASS();
 }
+
+TEST_CASE(storage_backend_read_text) {
+    const char *dir = "/tmp/kaufbot_read_test";
+    test_rmrf(dir);
+    test_mkdirp(dir);
+
+    Config cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.storage_backend = STORAGE_BACKEND_LOCAL;
+    snprintf(cfg.storage_path, sizeof(cfg.storage_path), "%s", dir);
+
+    StorageBackend *sb = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(sb);
+    ASSERT_EQ(0, storage_backend_ensure_dirs(sb));
+
+    /* Save a text file */
+    const char *content = "Hello, this is OCR text.";
+    ASSERT_EQ(0, storage_backend_save_text(sb, "ocr.txt", content));
+
+    /* Read it back */
+    char *read = storage_backend_read_text(sb, "ocr.txt");
+    ASSERT_NOT_NULL(read);
+    ASSERT_STR_EQ(content, read);
+    free(read);
+
+    storage_backend_close(sb);
+    test_rmrf(dir);
+    TEST_PASS();
+}
+
+TEST_CASE(storage_backend_read_text_missing) {
+    const char *dir = "/tmp/kaufbot_read_nf";
+    test_rmrf(dir);
+    test_mkdirp(dir);
+
+    Config cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.storage_backend = STORAGE_BACKEND_LOCAL;
+    snprintf(cfg.storage_path, sizeof(cfg.storage_path), "%s", dir);
+
+    StorageBackend *sb = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(sb);
+    ASSERT_EQ(0, storage_backend_ensure_dirs(sb));
+
+    char *read = storage_backend_read_text(sb, "nonexistent.txt");
+    ASSERT_TRUE(read == NULL);
+
+    storage_backend_close(sb);
+    test_rmrf(dir);
+    TEST_PASS();
+}
+
+TEST_CASE(storage_backend_read_text_null) {
+    char *read = storage_backend_read_text(NULL, "file.txt");
+    ASSERT_TRUE(read == NULL);
+    TEST_PASS();
+}

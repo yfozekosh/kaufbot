@@ -8,17 +8,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define GEMINI_API_BASE                  "https://generativelanguage.googleapis.com/v1beta/models"
 #define GEMINI_MAX_API_KEY_LEN           256
 #define GEMINI_MAX_MODEL_LEN             128
 #define GEMINI_URL_BUF_LEN               512
-#define GEMINI_HTTP_TIMEOUT_SECS         120L
+#define GEMINI_HTTP_TIMEOUT_SECS         600L
 #define GEMINI_HTTP_CONNECT_TIMEOUT_SECS 15L
+#define GEMINI_FALLBACK_MODEL            "gemma-3-27b-it"
 
 struct GeminiClient {
     char api_key[GEMINI_MAX_API_KEY_LEN];
     char model[GEMINI_MAX_MODEL_LEN];
+    char fallback_model[GEMINI_MAX_MODEL_LEN];
+    time_t fallback_until;
 };
 
 char *strip_markdown_json(char *raw) {
@@ -187,6 +191,8 @@ GeminiClient *gemini_new(const char *api_key, const char *model) {
         return NULL;
     snprintf(c->api_key, GEMINI_MAX_API_KEY_LEN, "%s", api_key);
     snprintf(c->model, GEMINI_MAX_MODEL_LEN, "%s", model);
+    snprintf(c->fallback_model, GEMINI_MAX_MODEL_LEN, "%s", GEMINI_FALLBACK_MODEL);
+    c->fallback_until = 0;
     return c;
 }
 
@@ -194,12 +200,33 @@ void gemini_free(GeminiClient *client) {
     free(client);
 }
 
+/* Return next midnight as time_t */
+static time_t next_midnight(void) {
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    tm.tm_hour = 0;
+    tm.tm_min = 0;
+    tm.tm_sec = 0;
+    tm.tm_mday += 1; /* next day */
+    return mktime(&tm);
+}
+
 /* Shared helper to POST a JSON body to Gemini and return the parsed text. */
 static char *gemini_post_and_parse(GeminiClient *client, const char *body) {
+    /* Check if fallback period has expired */
+    if (client->fallback_until != 0 && time(NULL) >= client->fallback_until) {
+        LOG_INFO("gemini fallback period expired, reverting to primary model: %s", client->model);
+        client->fallback_until = 0;
+    }
+
+    const char *active_model =
+        (client->fallback_until != 0) ? client->fallback_model : client->model;
+
     char url[GEMINI_URL_BUF_LEN];
-    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s", GEMINI_API_BASE, client->model,
+    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s", GEMINI_API_BASE, active_model,
              client->api_key);
-    LOG_DEBUG("sending request to Gemini API");
+    LOG_DEBUG("sending request to Gemini API (model: %s)", active_model);
 
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -235,6 +262,17 @@ static char *gemini_post_and_parse(GeminiClient *client, const char *body) {
         LOG_ERROR("curl error: %s", curl_easy_strerror(res));
         free(resp.data);
         return NULL;
+    }
+
+    /* Handle 429 rate limit - switch to fallback model */
+    if (http_code == 429 && client->fallback_until == 0) {
+        LOG_WARN("gemini rate limited (429), switching to fallback model: %s",
+                 client->fallback_model);
+        client->fallback_until = next_midnight();
+        free(resp.data);
+
+        /* Retry with fallback model */
+        return gemini_post_and_parse(client, body);
     }
 
     if (http_code != 200) {
