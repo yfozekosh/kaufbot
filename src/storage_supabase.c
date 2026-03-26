@@ -323,6 +323,49 @@ static char *supabase_get_public_url(StorageBackend *backend, const char *filena
     return supabase_signed_url(storage, filename);
 }
 
+static char *supabase_read_text(StorageBackend *backend, const char *filename) {
+    SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
+    LOG_DEBUG("reading text from Supabase: %s/%s", storage->bucket, filename);
+
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
+             filename);
+
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return NULL;
+
+    struct curl_slist *headers = build_auth_headers(storage);
+    GrowBuf resp = {0};
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, growbuf_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, SUPABASE_HTTP_TIMEOUT_SECS);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        LOG_ERROR("supabase read failed: %s", curl_easy_strerror(res));
+        growbuf_free(&resp);
+        return NULL;
+    }
+
+    if (http_code != 200) {
+        LOG_ERROR("supabase read returned HTTP %ld for %s", http_code, filename);
+        growbuf_free(&resp);
+        return NULL;
+    }
+
+    return resp.data;
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const StorageBackendOps supabase_ops = {.open = supabase_open,
@@ -330,6 +373,7 @@ static const StorageBackendOps supabase_ops = {.open = supabase_open,
                                                .ensure_dirs = supabase_ensure_dirs,
                                                .save_file = supabase_save_file,
                                                .save_text = supabase_save_text,
+                                               .read_text = supabase_read_text,
                                                .file_exists = supabase_file_exists,
                                                .delete_file = supabase_delete_file,
                                                .get_public_url = supabase_get_public_url};
