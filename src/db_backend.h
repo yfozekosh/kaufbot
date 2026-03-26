@@ -20,6 +20,10 @@ typedef struct {
     int (*mark_parsing_done)(DBBackend *db, int64_t file_id, const char *parsed_json);
     int (*get_parsed_receipt)(DBBackend *db, int64_t file_id, ParsedReceipt *out);
     int (*list)(DBBackend *db, db_list_cb cb, void *userdata);
+
+    /* Prompt operations */
+    int (*get_prompts)(DBBackend *db, db_prompts_cb cb, void *userdata);
+    int (*update_prompt)(DBBackend *db, int64_t id, const char *content);
 } DBBackendOps;
 
 struct DBBackendImpl {
@@ -105,6 +109,20 @@ static inline int db_backend_get_parsed_receipt(DBBackend *db, int64_t file_id,
 static inline int db_backend_list(DBBackend *db, db_list_cb cb, void *userdata) {
     if (db && db->ops && db->ops->list) {
         return db->ops->list(db, cb, userdata);
+    }
+    return -1;
+}
+
+static inline int db_backend_get_prompts(DBBackend *db, db_prompts_cb cb, void *userdata) {
+    if (db && db->ops && db->ops->get_prompts) {
+        return db->ops->get_prompts(db, cb, userdata);
+    }
+    return -1;
+}
+
+static inline int db_backend_update_prompt(DBBackend *db, int64_t id, const char *content) {
+    if (db && db->ops && db->ops->update_prompt) {
+        return db->ops->update_prompt(db, id, content);
     }
     return -1;
 }

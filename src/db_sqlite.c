@@ -80,7 +80,15 @@ static DBBackend *sqlite_open(const Config *cfg) {
         "  FOREIGN KEY (file_id) REFERENCES files(id)"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash);"
-        "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);";
+        "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);"
+        "CREATE TABLE IF NOT EXISTS prompts ("
+        "  id         INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  name       TEXT    NOT NULL UNIQUE,"
+        "  content    TEXT    NOT NULL DEFAULT '',"
+        "  created_at TEXT    NOT NULL,"
+        "  updated_at TEXT    NOT NULL"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);";
 
     if (db_exec(db->conn, schema) != 0) {
         LOG_ERROR("failed to create database schema");
@@ -402,6 +410,74 @@ static int sqlite_list(DBBackend *backend, db_list_cb cb, void *userdata) {
     return (rc == SQLITE_DONE) ? 0 : -1;
 }
 
+/* ── get prompts ──────────────────────────────────────────────────────────── */
+
+static int sqlite_get_prompts(DBBackend *backend, db_prompts_cb cb, void *userdata) {
+    SQLiteDB *db = (SQLiteDB *)backend->internal;
+    LOG_DEBUG("fetching all prompts");
+
+    const char *sql = "SELECT id, name, content, created_at, updated_at"
+                      " FROM prompts ORDER BY name";
+
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare get_prompts: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+
+    int count = 0;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        Prompt p;
+        memset(&p, 0, sizeof(p));
+        p.id = sqlite3_column_int64(stmt, 0);
+        snprintf(p.name, DB_PROMPT_NAME_LEN, "%s", (const char *)sqlite3_column_text(stmt, 1));
+        snprintf(p.content, DB_PROMPT_CONTENT_LEN, "%s",
+                 (const char *)sqlite3_column_text(stmt, 2));
+        snprintf(p.created_at, DB_DATE_LEN, "%s", (const char *)sqlite3_column_text(stmt, 3));
+        snprintf(p.updated_at, DB_DATE_LEN, "%s", (const char *)sqlite3_column_text(stmt, 4));
+        cb(&p, userdata);
+        count++;
+    }
+
+    sqlite3_finalize(stmt);
+    LOG_DEBUG("fetched %d prompts", count);
+    return (rc == SQLITE_DONE) ? 0 : -1;
+}
+
+/* ── update prompt ────────────────────────────────────────────────────────── */
+
+static int sqlite_update_prompt(DBBackend *backend, int64_t id, const char *content) {
+    SQLiteDB *db = (SQLiteDB *)backend->internal;
+    char now[DB_DATE_LEN];
+    now_iso8601(now, sizeof(now));
+
+    LOG_DEBUG("updating prompt id=%lld", (long long)id);
+
+    const char *sql = "UPDATE prompts SET content=?, updated_at=? WHERE id=?";
+
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db->conn, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("prepare update_prompt: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, content, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, now, -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 3, id);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        LOG_ERROR("update_prompt error: %s", sqlite3_errmsg(db->conn));
+        return -1;
+    }
+    LOG_DEBUG("prompt id=%lld updated", (long long)id);
+    return 0;
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const DBBackendOps sqlite_ops = {.open = sqlite_open,
@@ -411,7 +487,9 @@ static const DBBackendOps sqlite_ops = {.open = sqlite_open,
                                         .mark_ocr_done = sqlite_mark_ocr_done,
                                         .mark_parsing_done = sqlite_mark_parsing_done,
                                         .get_parsed_receipt = sqlite_get_parsed_receipt,
-                                        .list = sqlite_list};
+                                        .list = sqlite_list,
+                                        .get_prompts = sqlite_get_prompts,
+                                        .update_prompt = sqlite_update_prompt};
 
 DBBackend *db_backend_sqlite_open(const Config *cfg) {
     return sqlite_ops.open(cfg);

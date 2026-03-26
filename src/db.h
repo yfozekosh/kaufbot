@@ -5,12 +5,14 @@
 
 /* ── Database constants ───────────────────────────────────────────────────── */
 
-#define DB_OCR_FILENAME_LEN 256
-#define DB_HASH_LEN         65
-#define DB_FILENAME_LEN     256
-#define DB_ORIG_NAME_LEN    512
-#define DB_DATE_LEN         32
-#define DB_JSON_LEN         65536
+#define DB_OCR_FILENAME_LEN   256
+#define DB_HASH_LEN           65
+#define DB_FILENAME_LEN       256
+#define DB_ORIG_NAME_LEN      512
+#define DB_DATE_LEN           32
+#define DB_JSON_LEN           65536
+#define DB_PROMPT_NAME_LEN    128
+#define DB_PROMPT_CONTENT_LEN 65536
 
 /* ── Data structures ──────────────────────────────────────────────────────── */
 
@@ -34,6 +36,15 @@ typedef struct {
     char updated_at[DB_DATE_LEN];
 } ParsedReceipt;
 
+typedef struct {
+    int64_t id;
+    char name[DB_PROMPT_NAME_LEN];
+    char content[DB_PROMPT_CONTENT_LEN];
+    char created_at[DB_DATE_LEN];
+    char updated_at[DB_DATE_LEN];
+} Prompt;
+
 typedef void (*db_list_cb)(const FileRecord *rec, void *userdata);
+typedef void (*db_prompts_cb)(const Prompt *prompt, void *userdata);
 
 #endif /* DB_H */

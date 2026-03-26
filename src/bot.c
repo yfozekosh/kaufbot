@@ -1,6 +1,7 @@
 #include "bot.h"
 #include "cJSON.h"
 #include "config.h"
+#include "prompt_fetcher.h"
 #include "utils.h"
 
 #include <curl/curl.h>
@@ -10,26 +11,31 @@
 #include <string.h>
 #include <unistd.h>
 
-#define TG_API_BASE                "https://api.telegram.org/bot"
-#define TG_FILE_BASE               "https://api.telegram.org/file/bot"
-#define POLL_TIMEOUT               30
-#define MAX_REPLY_LEN              4096
-#define MAX_FILE_MB                20
-#define MAX_LIST_ENTRIES           10
-#define HTTP_TIMEOUT_SECS          60L
-#define HTTP_CONNECT_TIMEOUT_SECS  10L
-#define HTTP_POST_TIMEOUT_SECS     30L
-#define HTTP_DOWNLOAD_TIMEOUT_SECS 120L
-#define RECONNECT_DELAY_SECS       5
-#define RETRY_DELAY_SECS           2
-#define TG_CMD_START               "/start"
-#define TG_CMD_HELP                "/help"
-#define TG_CMD_LIST                "/list"
+#define TG_API_BASE                  "https://api.telegram.org/bot"
+#define TG_FILE_BASE                 "https://api.telegram.org/file/bot"
+#define POLL_TIMEOUT                 30
+#define MAX_REPLY_LEN                4096
+#define MAX_FILE_MB                  20
+#define MAX_LIST_ENTRIES             10
+#define HTTP_TIMEOUT_SECS            60L
+#define HTTP_CONNECT_TIMEOUT_SECS    10L
+#define HTTP_POST_TIMEOUT_SECS       30L
+#define HTTP_DOWNLOAD_TIMEOUT_SECS   120L
+#define RECONNECT_DELAY_SECS         5
+#define RETRY_DELAY_SECS             2
+#define TG_CMD_START                 "/start"
+#define TG_CMD_HELP                  "/help"
+#define TG_CMD_LIST                  "/list"
+#define PROMPT_REFRESH_INTERVAL_SECS 300
+
+/* Forward declaration */
+static void on_prompt_change(const char *prompt_name, const char *new_content, void *userdata);
 
 struct TgBot {
     const Config *cfg;
     Processor *processor;
     DBBackend *db;
+    PromptFetcher *prompt_fetcher;
     atomic_int running;
     long offset;
 };
@@ -407,11 +413,20 @@ TgBot *bot_new(const Config *cfg, Processor *processor, DBBackend *db) {
     bot->db = db;
     bot->offset = 0;
     atomic_store(&bot->running, 1);
+
+    bot->prompt_fetcher =
+        prompt_fetcher_new(db, PROMPT_REFRESH_INTERVAL_SECS, on_prompt_change, bot);
+    if (!bot->prompt_fetcher) {
+        LOG_WARN("failed to start prompt fetcher, continuing without it");
+    }
+
     return bot;
 }
 
 void bot_free(TgBot *bot) {
     if (bot) {
+        prompt_fetcher_stop(bot->prompt_fetcher);
+        prompt_fetcher_free(bot->prompt_fetcher);
         free(bot);
         if (g_curl_initialized) {
             curl_global_cleanup();
@@ -499,4 +514,25 @@ void bot_notify_startup(const TgBot *bot) {
         int64_t user_id = bot->cfg->allowed_users[i];
         tg_send_message(bot, user_id, msg);
     }
+}
+
+/* ── Prompt change notification ───────────────────────────────────────────── */
+
+void bot_notify_prompt_change(const TgBot *bot, const char *prompt_name, const char *new_content) {
+    if (!bot || !bot->cfg)
+        return;
+
+    char msg[MAX_REPLY_LEN];
+    snprintf(msg, sizeof(msg), "Prompt updated: %s\n\n%s", prompt_name ? prompt_name : "(unknown)",
+             new_content ? new_content : "");
+
+    for (int i = 0; i < bot->cfg->allowed_users_count; i++) {
+        int64_t user_id = bot->cfg->allowed_users[i];
+        tg_send_message(bot, user_id, msg);
+    }
+}
+
+static void on_prompt_change(const char *prompt_name, const char *new_content, void *userdata) {
+    const TgBot *bot = (const TgBot *)userdata;
+    bot_notify_prompt_change(bot, prompt_name, new_content);
 }

@@ -77,7 +77,15 @@ static DBBackend *postgres_open(const Config *cfg) {
         "  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash);"
-        "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);";
+        "CREATE INDEX IF NOT EXISTS idx_parsed_file_id ON parsed_receipts(file_id);"
+        "CREATE TABLE IF NOT EXISTS prompts ("
+        "  id         BIGSERIAL PRIMARY KEY,"
+        "  name       TEXT        NOT NULL UNIQUE,"
+        "  content    TEXT        NOT NULL DEFAULT '',"
+        "  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        "  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);";
 
     if (db_exec(conn, schema) != 0) {
         LOG_ERROR("failed to create database schema");
@@ -347,6 +355,69 @@ static int postgres_list(DBBackend *backend, db_list_cb cb, void *userdata) {
     return 0;
 }
 
+/* ── get prompts ──────────────────────────────────────────────────────────── */
+
+static int postgres_get_prompts(DBBackend *backend, db_prompts_cb cb, void *userdata) {
+    PostgresDB *db = (PostgresDB *)backend->internal;
+    LOG_DEBUG("fetching all prompts");
+
+    const char *sql = "SELECT id, name, content,"
+                      "       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),"
+                      "       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+                      " FROM prompts ORDER BY name";
+
+    PGresult *res = PQexec(db->conn, sql);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        LOG_ERROR("get_prompts error: %s", PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+
+    int count = 0;
+    int nrows = PQntuples(res);
+    for (int i = 0; i < nrows; i++) {
+        Prompt p;
+        memset(&p, 0, sizeof(p));
+        p.id = strtoll(PQgetvalue(res, i, 0), NULL, 10);
+        snprintf(p.name, DB_PROMPT_NAME_LEN, "%s", PQgetvalue(res, i, 1));
+        snprintf(p.content, DB_PROMPT_CONTENT_LEN, "%s", PQgetvalue(res, i, 2));
+        snprintf(p.created_at, DB_DATE_LEN, "%s", PQgetvalue(res, i, 3));
+        snprintf(p.updated_at, DB_DATE_LEN, "%s", PQgetvalue(res, i, 4));
+        cb(&p, userdata);
+        count++;
+    }
+
+    PQclear(res);
+    LOG_DEBUG("fetched %d prompts", count);
+    return 0;
+}
+
+/* ── update prompt ────────────────────────────────────────────────────────── */
+
+static int postgres_update_prompt(DBBackend *backend, int64_t id, const char *content) {
+    PostgresDB *db = (PostgresDB *)backend->internal;
+    LOG_DEBUG("updating prompt id=%lld", (long long)id);
+
+    const char *sql = "UPDATE prompts SET content=$1, updated_at=NOW() WHERE id=$2";
+
+    const char *params[2];
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
+    params[0] = content;
+    params[1] = id_str;
+
+    PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        LOG_ERROR("update_prompt error: %s", PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+    PQclear(res);
+
+    LOG_DEBUG("prompt id=%lld updated", (long long)id);
+    return 0;
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const DBBackendOps postgres_ops = {.open = postgres_open,
@@ -356,7 +427,9 @@ static const DBBackendOps postgres_ops = {.open = postgres_open,
                                           .mark_ocr_done = postgres_mark_ocr_done,
                                           .mark_parsing_done = postgres_mark_parsing_done,
                                           .get_parsed_receipt = postgres_get_parsed_receipt,
-                                          .list = postgres_list};
+                                          .list = postgres_list,
+                                          .get_prompts = postgres_get_prompts,
+                                          .update_prompt = postgres_update_prompt};
 
 DBBackend *db_backend_postgres_open(const Config *cfg) {
     return postgres_ops.open(cfg);

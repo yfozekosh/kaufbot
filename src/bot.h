@@ -26,4 +26,7 @@ void bot_notify_startup(const TgBot *bot);
 /* Send a message to a specific chat. Internal helper exposed for bot_notify_startup. */
 void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text);
 
+/* Notify all allowed users about a prompt change. */
+void bot_notify_prompt_change(const TgBot *bot, const char *prompt_name, const char *new_content);
+
 #endif /* BOT_H */
