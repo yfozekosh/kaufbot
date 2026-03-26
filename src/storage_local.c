@@ -282,6 +282,38 @@ static int local_delete_file(StorageBackend *backend, const char *filename) {
     return 0;
 }
 
+static char *local_read_text(StorageBackend *backend, const char *filename) {
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    char full_path[MAX_PATH_LEN * 2];
+    snprintf(full_path, sizeof(full_path), "%s/%s", storage->base_path, filename);
+
+    FILE *f = fopen(full_path, "r");
+    if (!f) {
+        LOG_ERROR("cannot open %s: %s", full_path, strerror(errno));
+        return NULL;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0) {
+        fclose(f);
+        return NULL;
+    }
+
+    char *buf = malloc((size_t)size + 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+
+    size_t read = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    buf[read] = '\0';
+    return buf;
+}
+
 static char *local_get_public_url(StorageBackend *backend, const char *filename) {
     (void)backend;
     (void)filename;
@@ -336,7 +368,8 @@ static const StorageBackendOps local_ops = {.open = local_open,
                                             .save_text = local_save_text,
                                             .file_exists = local_file_exists,
                                             .delete_file = local_delete_file,
-                                            .get_public_url = local_get_public_url};
+                                            .get_public_url = local_get_public_url,
+                                            .read_text = local_read_text};
 
 StorageBackend *storage_backend_local_open(const Config *cfg) {
     return local_ops.open(cfg);

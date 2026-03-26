@@ -21,6 +21,7 @@ typedef struct {
     int (*file_exists)(StorageBackend *storage, const char *filename);
     int (*delete_file)(StorageBackend *storage, const char *filename);
     char *(*get_public_url)(StorageBackend *storage, const char *filename);
+    char *(*read_text)(StorageBackend *storage, const char *filename);
 } StorageBackendOps;
 
 struct StorageBackendImpl {
@@ -92,6 +93,13 @@ static inline int storage_backend_delete_file(StorageBackend *storage, const cha
         return storage->ops->delete_file(storage, filename);
     }
     return -1;
+}
+
+static inline char *storage_backend_read_text(StorageBackend *storage, const char *filename) {
+    if (storage && storage->ops && storage->ops->read_text) {
+        return storage->ops->read_text(storage, filename);
+    }
+    return NULL;
 }
 
 static inline char *storage_backend_get_public_url(StorageBackend *storage, const char *filename) {

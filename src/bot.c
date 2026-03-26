@@ -27,6 +27,7 @@
 #define TG_CMD_HELP                  "/help"
 #define TG_CMD_LIST                  "/list"
 #define TG_CMD_DELETE                "/delete"
+#define TG_CMD_RETRY                 "/retry"
 #define PROMPT_REFRESH_INTERVAL_SECS 300
 
 /* Forward declaration */
@@ -142,16 +143,26 @@ static void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, con
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
     cJSON_AddStringToObject(payload, "text", text);
+    cJSON_AddStringToObject(payload, "parse_mode", "Markdown");
 
-    /* Build inline keyboard: [[{"text": "Delete", "callback_data": "delete:<id>"}]] */
+    /* Build inline keyboard with Retry and Delete buttons */
     cJSON *keyboard = cJSON_CreateArray();
     cJSON *row = cJSON_CreateArray();
-    cJSON *button = cJSON_CreateObject();
-    char cb_data[64];
-    snprintf(cb_data, sizeof(cb_data), "delete:%lld", (long long)db_file_id);
-    cJSON_AddStringToObject(button, "text", "Delete");
-    cJSON_AddStringToObject(button, "callback_data", cb_data);
-    cJSON_AddItemToArray(row, button);
+
+    cJSON *retry_btn = cJSON_CreateObject();
+    char retry_data[64];
+    snprintf(retry_data, sizeof(retry_data), "retry:%lld", (long long)db_file_id);
+    cJSON_AddStringToObject(retry_btn, "text", "\xF0\x9F\x94\x84 Retry OCR");
+    cJSON_AddStringToObject(retry_btn, "callback_data", retry_data);
+    cJSON_AddItemToArray(row, retry_btn);
+
+    cJSON *delete_btn = cJSON_CreateObject();
+    char delete_data[64];
+    snprintf(delete_data, sizeof(delete_data), "delete:%lld", (long long)db_file_id);
+    cJSON_AddStringToObject(delete_btn, "text", "\xF0\x9F\x97\x91\xEF\xB8\x8F Delete");
+    cJSON_AddStringToObject(delete_btn, "callback_data", delete_data);
+    cJSON_AddItemToArray(row, delete_btn);
+
     cJSON_AddItemToArray(keyboard, row);
     cJSON *reply_markup = cJSON_CreateObject();
     cJSON_AddItemToObject(reply_markup, "inline_keyboard", keyboard);
@@ -342,7 +353,8 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
                         "Commands:\n"
                         "  /help      - show this message\n"
                         "  /list      - show recently uploaded files\n"
-                        "  /delete ID - delete a file by its ID");
+                        "  /delete ID - delete a file by its ID\n"
+                        "  /retry ID  - retry OCR parsing for a file");
         return;
     }
 
@@ -378,6 +390,33 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
         char msg[MAX_REPLY_LEN];
         do_delete_file(bot, (int64_t)id, msg, sizeof(msg));
         tg_send_message(bot, chat_id, msg);
+        return;
+    }
+
+    if (str_starts_with(text, TG_CMD_RETRY)) {
+        const char *arg = text + strlen(TG_CMD_RETRY);
+        while (*arg == ' ')
+            arg++;
+
+        if (*arg == '\0') {
+            tg_send_message(bot, chat_id, "Usage: /retry <id>");
+            return;
+        }
+
+        char *end;
+        long long id = strtoll(arg, &end, 10);
+        if (end == arg || *end != '\0') {
+            tg_send_message(bot, chat_id, "Invalid ID. Usage: /retry <id>");
+            return;
+        }
+
+        char reply[MAX_REPLY_LEN];
+        int rc = processor_retry_ocr(bot->processor, (int64_t)id, reply, sizeof(reply));
+        if (rc == 0) {
+            tg_send_message_with_keyboard(bot, chat_id, reply, (int64_t)id);
+        } else {
+            tg_send_message(bot, chat_id, reply);
+        }
         return;
     }
 
@@ -519,7 +558,6 @@ static void dispatch_update(TgBot *bot, cJSON *update) {
             int rc = do_delete_file(bot, (int64_t)file_id, msg, sizeof(msg));
 
             if (rc == 0) {
-                /* Delete the message with the button */
                 if (cJSON_IsNumber(chat_id) && cJSON_IsNumber(msg_id)) {
                     tg_delete_message(bot, (int64_t)chat_id->valuedouble,
                                       (int64_t)msg_id->valuedouble);
@@ -527,6 +565,26 @@ static void dispatch_update(TgBot *bot, cJSON *update) {
                 tg_answer_callback_query(bot, cb_id->valuestring, "File deleted.");
             } else {
                 tg_answer_callback_query(bot, cb_id->valuestring, msg);
+            }
+        } else if (strncmp(data, "retry:", 6) == 0) {
+            long long file_id = strtoll(data + 6, NULL, 10);
+
+            cJSON *chat = cJSON_GetObjectItem(cb_message, "chat");
+            cJSON *chat_id_obj = chat ? cJSON_GetObjectItem(chat, "id") : NULL;
+            int64_t retry_chat_id =
+                cJSON_IsNumber(chat_id_obj) ? (int64_t)chat_id_obj->valuedouble : 0;
+
+            tg_answer_callback_query(bot, cb_id->valuestring, "Retrying OCR...");
+
+            if (retry_chat_id != 0) {
+                char reply[MAX_REPLY_LEN];
+                int rc =
+                    processor_retry_ocr(bot->processor, (int64_t)file_id, reply, sizeof(reply));
+                if (rc == 0) {
+                    tg_send_message_with_keyboard(bot, retry_chat_id, reply, (int64_t)file_id);
+                } else {
+                    tg_send_message(bot, retry_chat_id, reply);
+                }
             }
         } else {
             tg_answer_callback_query(bot, cb_id->valuestring, NULL);

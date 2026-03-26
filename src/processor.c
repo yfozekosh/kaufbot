@@ -20,10 +20,11 @@ struct Processor {
 int strategy_notify_and_skip(const FileRecord *existing, char *reply_buf, size_t buf_len) {
     LOG_INFO("duplicate detected: %s", existing->saved_file_name);
     snprintf(reply_buf, buf_len,
-             "Duplicate detected - this file was already uploaded.\n"
-             "Saved as: %s\n"
-             "Uploaded: %s\n"
-             "OCR: %s",
+             "\xF0\x9F\x94\x84 *Duplicate detected!*\n\n"
+             "\xF0\x9F\x93\x84 File: `%s`\n"
+             "\xF0\x9F\x95\x90 Uploaded: `%s`\n"
+             "\xE2\x9C\x85 OCR: `%s`\n\n"
+             "\xF0\x9F\x94\x8D This file was already uploaded.",
              existing->saved_file_name, existing->created_at,
              existing->is_ocr_processed ? "done" : "not processed");
     return 0;
@@ -59,6 +60,8 @@ void processor_free(Processor *p) {
 void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
                               const char *ocr_filename, const char *original_name, size_t data_len,
                               cJSON *json) {
+    (void)saved_name;
+    (void)ocr_filename;
     (void)original_name;
     (void)data_len;
     cJSON *store_info = cJSON_GetObjectItem(json, "store_information");
@@ -99,7 +102,7 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
             int remaining = (int)sizeof(items_text) - pos;
             if (remaining > 0) {
                 pos += snprintf(items_text + pos, (size_t)remaining,
-                                "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n", i + 1, item_name,
+                                "  `%d.` %s: `%.2f EUR` x `%.2f` = `%.2f EUR`\n", i + 1, item_name,
                                 item_price, item_amount, line_total);
             }
         }
@@ -108,15 +111,12 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
     /* Build reply */
     pos = 0;
     pos += snprintf(reply_buf + pos, buf_len - pos,
-                    "File saved: %s\n"
-                    "OCR result saved: %s\n"
-                    "Receipt parsed successfully!\n\n"
-                    "Store: %s\n\n"
-                    "Line items:\n%s\n"
-                    "Calculated total: %.2f EUR\n"
-                    "Parsed total: %.2f EUR\n\n"
-                    "Full parsed data saved to database.",
-                    saved_name, ocr_filename, name, items_text, calculated_total, parsed_total);
+                    "\xE2\x9C\x85 *Receipt parsed!*\n\n"
+                    "\xF0\x9F\x8F\xAA Store: *%s*\n\n"
+                    "\xF0\x9F\x9B\x92 *Line items (%d):*\n%s\n"
+                    "\xF0\x9F\x92\xB0 Calculated total: `%.2f EUR`\n"
+                    "\xF0\x9F\x92\xB0 Parsed total: `%.2f EUR`",
+                    name, item_count, items_text, calculated_total, parsed_total);
 
     /* Add warning if totals differ by more than 1 cent (with floating point tolerance) */
     double diff = calculated_total - parsed_total;
@@ -124,13 +124,11 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
         diff = -diff;
 
     if (diff > 0.015) { /* > 1 cent with FP tolerance */
-        snprintf(reply_buf + pos, buf_len - pos,
-                 "\n⚠️ Warning: Calculated total (%.2f EUR) differs from parsed total (%.2f EUR)",
-                 calculated_total, parsed_total);
+        pos += snprintf(reply_buf + pos, buf_len - pos,
+                        "\n\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated total (`%.2f EUR`) differs "
+                        "from parsed total (`%.2f EUR`)",
+                        calculated_total, parsed_total);
     }
-
-    (void)original_name;
-    (void)data_len;
 }
 
 /* ── pipeline ─────────────────────────────────────────────────────────────── */
@@ -172,9 +170,11 @@ static char *processor_run_ocr(Processor *p, const char *original_name, const ui
     if (!ocr_text) {
         LOG_ERROR("OCR extraction failed");
         snprintf(reply_buf, reply_buf_len,
-                 "File saved as: %s\n"
-                 "OCR failed - file is saved, OCR can be retried later.\n"
-                 "Original: %s  |  Size: %zu bytes",
+                 "\xF0\x9F\x94\xB4 *OCR Failed*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x93\x8F Original: `%s`\n"
+                 "\xF0\x9F\x93\x8F Size: `%zu bytes`\n\n"
+                 "\xF0\x9F\x94\x84 Use the button below to retry OCR.",
                  saved_name, original_name, data_len);
         return NULL;
     }
@@ -202,10 +202,12 @@ static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *
     if (!parsed_json) {
         LOG_ERROR("gemini_parse_receipt returned NULL");
         snprintf(reply_buf, reply_buf_len,
-                 "File saved: %s\n"
-                 "OCR result saved: %s\n"
-                 "Parsing failed - OCR data is saved, parsing can be retried later.\n"
-                 "Original: %s  |  Size: %zu bytes",
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Parsing Failed*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x93\x84 OCR saved: `%s`\n"
+                 "\xF0\x9F\x93\x8F Original: `%s`\n"
+                 "\xF0\x9F\x93\x8F Size: `%zu bytes`\n\n"
+                 "OCR data is saved, parsing can be retried later.",
                  saved_name, ocr_filename, original_name, data_len);
         return NULL;
     }
@@ -271,11 +273,13 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
     if (!json) {
         LOG_ERROR("cJSON_Parse failed - invalid JSON: %.200s", parsed_json);
         snprintf(reply_buf, reply_buf_len,
-                 "File saved: %s\n"
-                 "OCR result saved: %s\n"
-                 "Receipt parsed and saved to database.\n"
-                 "Original: %s  |  Size: %zu bytes\n\n"
-                 "ID: %lld",
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Parse Warning*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x93\x84 OCR saved: `%s`\n"
+                 "\xF0\x9F\x93\x8F Original: `%s`\n"
+                 "\xF0\x9F\x93\x8F Size: `%zu bytes`\n\n"
+                 "Saved to database but JSON was invalid.\n\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`",
                  rec.saved_file_name, ocr_filename, original_name, data_len, (long long)rec.id);
     } else {
         processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
@@ -283,10 +287,91 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
         cJSON_Delete(json);
         size_t len = strlen(reply_buf);
         if (len + 32 < reply_buf_len) {
-            snprintf(reply_buf + len, reply_buf_len - len, "\n\nID: %lld", (long long)rec.id);
+            snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
+                     (long long)rec.id);
         }
     }
 
     free(ocr_text);
     free(parsed_json);
+}
+
+/* ── retry OCR ────────────────────────────────────────────────────────────── */
+
+int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t reply_buf_len) {
+    if (!p || !reply_buf || reply_buf_len == 0)
+        return -1;
+
+    /* Look up file record */
+    FileRecord rec;
+    if (db_backend_find_by_id(p->db, file_id, &rec) != 0) {
+        snprintf(reply_buf, reply_buf_len, "\xF0\x9F\x94\xB4 File with ID `%lld` not found.",
+                 (long long)file_id);
+        return -1;
+    }
+
+    LOG_INFO("retry OCR for file id=%lld: %s", (long long)file_id, rec.saved_file_name);
+
+    /* Read the stored OCR text */
+    if (rec.ocr_file_name[0] == '\0') {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "No OCR text available. Please re-upload the file.",
+                 rec.original_file_name, (long long)file_id);
+        return -1;
+    }
+
+    char *ocr_text = storage_backend_read_text(p->storage, rec.ocr_file_name);
+    if (!ocr_text) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "OCR text file is missing. Please re-upload the file.",
+                 rec.original_file_name, (long long)file_id);
+        return -1;
+    }
+
+    /* Re-parse the receipt */
+    char *parsed_json = gemini_parse_receipt(p->gemini, ocr_text);
+    free(ocr_text);
+
+    if (!parsed_json) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Retry: Parsing Failed*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "Parsing failed again.",
+                 rec.original_file_name, (long long)file_id);
+        return -1;
+    }
+
+    if (db_backend_mark_parsing_done(p->db, file_id, parsed_json) != 0) {
+        LOG_ERROR("failed to save parsed receipt");
+    }
+
+    cJSON *json = cJSON_Parse(parsed_json);
+    if (!json) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Retry: Invalid JSON*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`",
+                 rec.original_file_name, (long long)file_id);
+        free(parsed_json);
+        return 0;
+    }
+
+    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, rec.ocr_file_name,
+                             rec.original_file_name, (size_t)rec.file_size_bytes, json);
+    cJSON_Delete(json);
+    free(parsed_json);
+
+    size_t len = strlen(reply_buf);
+    if (len + 32 < reply_buf_len) {
+        snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
+                 (long long)rec.id);
+    }
+    return 0;
 }

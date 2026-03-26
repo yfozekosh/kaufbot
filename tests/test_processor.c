@@ -15,8 +15,7 @@
 
 /* ── Test helper: build mock JSON response ─────────────────────────────── */
 
-static cJSON *build_mock_receipt_json(const char *store_name, double total_sum,
-                                      cJSON *line_items) {
+static cJSON *build_mock_receipt_json(const char *store_name, double total_sum, cJSON *line_items) {
     cJSON *json = cJSON_CreateObject();
 
     cJSON *store_info = cJSON_CreateObject();
@@ -103,8 +102,8 @@ TEST_CASE(processor_line_items_multiple_items) {
 TEST_CASE(processor_total_calculation_matches) {
     /* Create items that sum to exactly 10.00 */
     cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToArray(items, create_line_item("Item A", 3.50, 2.0));  /* 7.00 */
-    cJSON_AddItemToArray(items, create_line_item("Item B", 3.00, 1.0));  /* 3.00 */
+    cJSON_AddItemToArray(items, create_line_item("Item A", 3.50, 2.0)); /* 7.00 */
+    cJSON_AddItemToArray(items, create_line_item("Item B", 3.00, 1.0)); /* 3.00 */
 
     cJSON *json = build_mock_receipt_json("Store", 10.00, items);
     ASSERT_NOT_NULL(json);
@@ -136,10 +135,10 @@ TEST_CASE(processor_total_calculation_matches) {
 TEST_CASE(processor_total_calculation_mismatch) {
     /* Create items that sum to 10.00 but parsed total is 11.00 */
     cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToArray(items, create_line_item("Item A", 3.50, 2.0));  /* 7.00 */
-    cJSON_AddItemToArray(items, create_line_item("Item B", 3.00, 1.0));  /* 3.00 */
+    cJSON_AddItemToArray(items, create_line_item("Item A", 3.50, 2.0)); /* 7.00 */
+    cJSON_AddItemToArray(items, create_line_item("Item B", 3.00, 1.0)); /* 3.00 */
 
-    cJSON *json = build_mock_receipt_json("Store", 11.00, items);  /* Wrong total */
+    cJSON *json = build_mock_receipt_json("Store", 11.00, items); /* Wrong total */
     ASSERT_NOT_NULL(json);
 
     cJSON *line_items = cJSON_GetObjectItem(json, "line_items");
@@ -201,8 +200,8 @@ TEST_CASE(processor_total_calculation_missing_fields) {
 TEST_CASE(processor_total_with_fractional_amounts) {
     /* Test with fractional amounts */
     cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToArray(items, create_line_item("Fabric", 12.50, 0.5));   /* 6.25 */
-    cJSON_AddItemToArray(items, create_line_item("Ribbon", 2.00, 2.5));    /* 5.00 */
+    cJSON_AddItemToArray(items, create_line_item("Fabric", 12.50, 0.5)); /* 6.25 */
+    cJSON_AddItemToArray(items, create_line_item("Ribbon", 2.00, 2.5));  /* 5.00 */
 
     cJSON *json = build_mock_receipt_json("Craft Store", 11.25, items);
     ASSERT_NOT_NULL(json);
@@ -307,10 +306,9 @@ TEST_CASE(processor_reply_single_item) {
     ASSERT_TRUE(strstr(reply, "Test Store") != NULL);
     ASSERT_TRUE(strstr(reply, "Milk") != NULL);
     ASSERT_TRUE(strstr(reply, "1.50 EUR") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total: 3.00 EUR") != NULL);
-    ASSERT_TRUE(strstr(reply, "Parsed total: 3.00 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "3.00 EUR") != NULL);
     /* No warning expected - totals match */
-    ASSERT_TRUE(strstr(reply, "Warning") == NULL);
+    ASSERT_TRUE(strstr(reply, "differs") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -331,9 +329,9 @@ TEST_CASE(processor_reply_multiple_items) {
     ASSERT_TRUE(strstr(reply, "Bread") != NULL);
     ASSERT_TRUE(strstr(reply, "Cheese") != NULL);
     ASSERT_TRUE(strstr(reply, "Wine") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total: 20.00 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "20.00 EUR") != NULL);
     /* No warning - totals match */
-    ASSERT_TRUE(strstr(reply, "Warning") == NULL);
+    ASSERT_TRUE(strstr(reply, "differs") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -350,9 +348,9 @@ TEST_CASE(processor_reply_total_mismatch_warning) {
     processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 512, json);
 
     /* Should contain warning */
-    ASSERT_TRUE(strstr(reply, "Warning") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total (10.00 EUR) differs from parsed total (11.00 EUR)") !=
-                NULL);
+    ASSERT_TRUE(strstr(reply, "differs") != NULL);
+    ASSERT_TRUE(strstr(reply, "10.00 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "11.00 EUR") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -369,7 +367,7 @@ TEST_CASE(processor_reply_no_warning_at_one_cent) {
     processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 100, json);
 
     /* Should NOT contain warning (boundary is > 0.015 for FP tolerance) */
-    ASSERT_TRUE(strstr(reply, "Warning") == NULL);
+    ASSERT_TRUE(strstr(reply, "differs") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -385,7 +383,7 @@ TEST_CASE(processor_reply_warning_over_one_cent) {
 
     processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 100, json);
 
-    ASSERT_TRUE(strstr(reply, "Warning") != NULL);
+    ASSERT_TRUE(strstr(reply, "differs") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -399,8 +397,7 @@ TEST_CASE(processor_reply_zero_items) {
     processor_build_reply_ok(reply, sizeof(reply), "empty.jpg", "empty_ocr.txt", "e.jpg", 0, json);
 
     ASSERT_TRUE(strstr(reply, "Empty Store") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total: 0.00 EUR") != NULL);
-    ASSERT_TRUE(strstr(reply, "Parsed total: 0.00 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "0.00 EUR") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -434,9 +431,9 @@ TEST_CASE(processor_reply_missing_line_items) {
     processor_build_reply_ok(reply, sizeof(reply), "x.jpg", "x.txt", "x.jpg", 100, json);
 
     ASSERT_TRUE(strstr(reply, "Store") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total: 0.00 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "0.00 EUR") != NULL);
     /* Warning expected since 0.00 != 10.00 */
-    ASSERT_TRUE(strstr(reply, "Warning") != NULL);
+    ASSERT_TRUE(strstr(reply, "differs") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -445,8 +442,8 @@ TEST_CASE(processor_reply_missing_line_items) {
 TEST_CASE(processor_reply_fractional_quantities) {
     char reply[4096];
     cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToArray(items, create_line_item("Fabric", 15.00, 0.5));   /* 7.50 */
-    cJSON_AddItemToArray(items, create_line_item("Thread", 2.00, 3.5));    /* 7.00 */
+    cJSON_AddItemToArray(items, create_line_item("Fabric", 15.00, 0.5)); /* 7.50 */
+    cJSON_AddItemToArray(items, create_line_item("Thread", 2.00, 3.5));  /* 7.00 */
 
     cJSON *json = build_mock_receipt_json("Craft Store", 14.50, items);
 
@@ -454,9 +451,9 @@ TEST_CASE(processor_reply_fractional_quantities) {
 
     ASSERT_TRUE(strstr(reply, "Fabric") != NULL);
     ASSERT_TRUE(strstr(reply, "Thread") != NULL);
-    ASSERT_TRUE(strstr(reply, "Calculated total: 14.50 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "14.50 EUR") != NULL);
     /* No warning - totals match */
-    ASSERT_TRUE(strstr(reply, "Warning") == NULL);
+    ASSERT_TRUE(strstr(reply, "differs") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
