@@ -214,6 +214,9 @@ static time_t next_midnight(void) {
 
 /* Shared helper to POST a JSON body to Gemini and return the parsed text. */
 static char *gemini_post_and_parse(GeminiClient *client, const char *body) {
+    int tried_fallback = 0;
+
+retry:
     /* Check if fallback period has expired */
     if (client->fallback_until != 0 && time(NULL) >= client->fallback_until) {
         LOG_INFO("gemini fallback period expired, reverting to primary model: %s", client->model);
@@ -264,15 +267,14 @@ static char *gemini_post_and_parse(GeminiClient *client, const char *body) {
         return NULL;
     }
 
-    /* Handle 429 rate limit - switch to fallback model */
-    if (http_code == 429 && client->fallback_until == 0) {
+    /* Handle 429 rate limit - switch to fallback model and retry once */
+    if (http_code == 429 && !tried_fallback) {
         LOG_WARN("gemini rate limited (429), switching to fallback model: %s",
                  client->fallback_model);
         client->fallback_until = next_midnight();
         free(resp.data);
-
-        /* Retry with fallback model */
-        return gemini_post_and_parse(client, body);
+        tried_fallback = 1;
+        goto retry;
     }
 
     if (http_code != 200) {

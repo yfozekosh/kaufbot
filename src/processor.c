@@ -124,10 +124,10 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
         diff = -diff;
 
     if (diff > 0.015) { /* > 1 cent with FP tolerance */
-        pos += snprintf(reply_buf + pos, buf_len - pos,
-                        "\n\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated total (`%.2f EUR`) differs "
-                        "from parsed total (`%.2f EUR`)",
-                        calculated_total, parsed_total);
+        snprintf(reply_buf + pos, buf_len - pos,
+                 "\n\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated total (`%.2f EUR`) differs "
+                 "from parsed total (`%.2f EUR`)",
+                 calculated_total, parsed_total);
     }
 }
 

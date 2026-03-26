@@ -486,3 +486,47 @@ TEST_CASE(gemini_parse_text_not_string) {
     ASSERT_TRUE(result == NULL);
     TEST_PASS();
 }
+
+/* ── Gemini 429 / rate-limit error format ──────────────────────────── */
+
+TEST_CASE(gemini_parse_429_error_format) {
+    const char *json = "{\"error\": {\"code\": 429, \"message\": \"Resource has been exhausted\", "
+                       "\"status\": \"RESOURCE_EXHAUSTED\"}}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_parse_500_error_format) {
+    const char *json = "{\"error\": {\"code\": 500, \"message\": \"Internal error\", "
+                       "\"status\": \"INTERNAL\"}}";
+    char *result = gemini_parse_api_response(json);
+    ASSERT_TRUE(result == NULL);
+    TEST_PASS();
+}
+
+/* ── gemini_new / gemini_free edge cases ───────────────────────────── */
+
+TEST_CASE(gemini_new_null_key) {
+    GeminiClient *c = gemini_new(NULL, "model");
+    ASSERT_TRUE(c == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_new_null_model) {
+    GeminiClient *c = gemini_new("key", NULL);
+    ASSERT_TRUE(c == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_new_and_free) {
+    GeminiClient *c = gemini_new("test_key", "gemini-2.5-flash");
+    ASSERT_NOT_NULL(c);
+    gemini_free(c);
+    TEST_PASS();
+}
+
+TEST_CASE(gemini_free_null) {
+    gemini_free(NULL);
+    TEST_PASS();
+}

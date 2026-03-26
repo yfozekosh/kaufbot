@@ -173,6 +173,7 @@ TEST_CASE(strategy_notify_and_skip_format) {
     ASSERT_EQ(0, result);
     ASSERT_TRUE(strstr(buf, "upload_test.jpg") != NULL);
     ASSERT_TRUE(strstr(buf, "done") != NULL);
+    ASSERT_TRUE(strstr(buf, "Duplicate") != NULL);
     TEST_PASS();
 }
 TEST_CASE(strategy_notify_and_skip_not_processed) {
@@ -186,6 +187,117 @@ TEST_CASE(strategy_notify_and_skip_not_processed) {
     int result = strategy_notify_and_skip(&rec, buf, sizeof(buf));
     ASSERT_EQ(0, result);
     ASSERT_TRUE(strstr(buf, "not processed") != NULL);
+    TEST_PASS();
+}
+
+/* ── processor_retry_ocr error paths ──────────────────────────────── */
+
+TEST_CASE(processor_retry_ocr_not_found) {
+    Config cfg = make_test_config();
+    DBBackend *db = db_backend_open(&cfg);
+    StorageBackend *storage = storage_backend_open(&cfg);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    Processor *p = processor_new(db, storage, gemini, NULL);
+
+    char reply[512];
+    int rc = processor_retry_ocr(p, 9999, reply, sizeof(reply));
+    ASSERT_EQ(-1, rc);
+    ASSERT_TRUE(strstr(reply, "not found") != NULL);
+
+    processor_free(p);
+    gemini_free(gemini);
+    db_backend_close(db);
+    storage_backend_close(storage);
+    TEST_PASS();
+}
+
+TEST_CASE(processor_retry_ocr_no_ocr_file) {
+    Config cfg = make_test_config();
+    test_rm(cfg.db_path);
+    DBBackend *db = db_backend_open(&cfg);
+    StorageBackend *storage = storage_backend_open(&cfg);
+    storage_backend_ensure_dirs(storage);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    Processor *p = processor_new(db, storage, gemini, NULL);
+
+    /* Insert a file record without OCR */
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "test.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "upload_test.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "hash_retry_test");
+    rec.is_ocr_processed = 0;
+    ASSERT_EQ(0, db_backend_insert(db, &rec));
+
+    char reply[512];
+    int rc = processor_retry_ocr(p, rec.id, reply, sizeof(reply));
+    ASSERT_EQ(-1, rc);
+    ASSERT_TRUE(strstr(reply, "Cannot Retry") != NULL);
+
+    processor_free(p);
+    gemini_free(gemini);
+    db_backend_close(db);
+    storage_backend_close(storage);
+    TEST_PASS();
+}
+
+TEST_CASE(processor_retry_ocr_with_ocr_text) {
+    Config cfg = make_test_config();
+    test_rm(cfg.db_path);
+    DBBackend *db = db_backend_open(&cfg);
+    StorageBackend *storage = storage_backend_open(&cfg);
+    storage_backend_ensure_dirs(storage);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    Processor *p = processor_new(db, storage, gemini, NULL);
+
+    /* Insert a file record with OCR */
+    FileRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    snprintf(rec.original_file_name, DB_ORIG_NAME_LEN, "test.jpg");
+    rec.file_size_bytes = 100;
+    snprintf(rec.saved_file_name, DB_FILENAME_LEN, "upload_retry.jpg");
+    snprintf(rec.file_hash, DB_HASH_LEN, "hash_retry_ocr");
+    rec.is_ocr_processed = 1;
+    snprintf(rec.ocr_file_name, DB_OCR_FILENAME_LEN, "upload_retry_ocr.txt");
+    ASSERT_EQ(0, db_backend_insert(db, &rec));
+
+    /* Save OCR text to storage */
+    const char *ocr_text = "REWE\nMilk 1.99\nTotal 1.99";
+    ASSERT_EQ(0, storage_backend_save_text(storage, rec.ocr_file_name, ocr_text));
+
+    /* Retry will fail because Gemini API key is fake, but it should get past the
+     * "no OCR text" check */
+    char reply[512];
+    processor_retry_ocr(p, rec.id, reply, sizeof(reply));
+    /* reply should NOT say "Cannot Retry" or "not found" */
+    ASSERT_TRUE(strstr(reply, "not found") == NULL);
+    ASSERT_TRUE(strstr(reply, "No OCR text") == NULL);
+
+    processor_free(p);
+    gemini_free(gemini);
+    db_backend_close(db);
+    storage_backend_close(storage);
+    TEST_PASS();
+}
+
+TEST_CASE(processor_retry_ocr_null_params) {
+    char reply[512];
+    ASSERT_EQ(-1, processor_retry_ocr(NULL, 1, reply, sizeof(reply)));
+
+    Config cfg = make_test_config();
+    DBBackend *db = db_backend_open(&cfg);
+    StorageBackend *storage = storage_backend_open(&cfg);
+    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model);
+    Processor *p = processor_new(db, storage, gemini, NULL);
+
+    ASSERT_EQ(-1, processor_retry_ocr(p, 1, NULL, sizeof(reply)));
+    ASSERT_EQ(-1, processor_retry_ocr(p, 1, reply, 0));
+
+    processor_free(p);
+    gemini_free(gemini);
+    db_backend_close(db);
+    storage_backend_close(storage);
     TEST_PASS();
 }
 

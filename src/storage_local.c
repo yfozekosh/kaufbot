@@ -308,9 +308,9 @@ static char *local_read_text(StorageBackend *backend, const char *filename) {
         return NULL;
     }
 
-    size_t read = fread(buf, 1, (size_t)size, f);
+    size_t nread = fread(buf, 1, (size_t)size, f);
     fclose(f);
-    buf[read] = '\0';
+    buf[nread] = '\0'; /* nread is always <= size (our allocation size) */
     return buf;
 }
 
