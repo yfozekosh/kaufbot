@@ -7,7 +7,7 @@
 /* ── Grow buffer for dynamic string building (curl callbacks, etc.) ──────── */
 
 typedef struct {
-    char  *data;
+    char *data;
     size_t len;
     size_t cap;
 } GrowBuf;

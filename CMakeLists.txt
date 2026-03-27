@@ -26,39 +26,48 @@ if(NOT DEFINED CJSON_DIR)
 endif()
 get_filename_component(CJSON_DIR "${CJSON_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
 
+# Helper: all include dirs for the project
+set(PROJECT_INCLUDE_DIRS
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/db
+    ${CMAKE_SOURCE_DIR}/src/storage
+    ${CMAKE_SOURCE_DIR}/src/ocr
+    ${CMAKE_SOURCE_DIR}/src/infra
+    ${CMAKE_SOURCE_DIR}/src/telegram
+    ${CJSON_DIR}
+)
+
 set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/main.c
     ${CMAKE_SOURCE_DIR}/src/config.c
-    ${CMAKE_SOURCE_DIR}/src/gemini.c
     ${CMAKE_SOURCE_DIR}/src/processor.c
-    ${CMAKE_SOURCE_DIR}/src/bot.c
-    ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
     ${CMAKE_SOURCE_DIR}/src/utils.c
-    ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
-    ${CMAKE_SOURCE_DIR}/src/storage_local.c
-    ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
-    ${CMAKE_SOURCE_DIR}/src/http_client.c
-    ${CMAKE_SOURCE_DIR}/src/file_repository.c
-    ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
-    ${CMAKE_SOURCE_DIR}/src/ocr_service.c
-    ${CMAKE_SOURCE_DIR}/src/document_store.c
-    ${CMAKE_SOURCE_DIR}/src/event_bus.c
+    ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
+    ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
+    ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
+    ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
+    ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
+    ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
+    ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.c
+    ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.c
+    ${CMAKE_SOURCE_DIR}/src/infra/http_client.c
+    ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
+    ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
+    ${CMAKE_SOURCE_DIR}/src/infra/document_store.c
+    ${CMAKE_SOURCE_DIR}/src/infra/event_bus.c
     ${CJSON_DIR}/cJSON.c
 )
 
 if(PostgreSQL_FOUND)
     list(APPEND SOURCES
-        ${CMAKE_SOURCE_DIR}/src/db_postgres.c
-        ${CMAKE_SOURCE_DIR}/src/storage_supabase.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_postgres.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_supabase.c
     )
 endif()
 
 add_executable(tgbot ${SOURCES})
 
-target_include_directories(tgbot PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CJSON_DIR}
-)
+target_include_directories(tgbot PRIVATE ${PROJECT_INCLUDE_DIRS})
 
 target_link_libraries(tgbot PRIVATE
     CURL::libcurl
@@ -83,9 +92,8 @@ if(BUILD_TESTS)
 
     # Common test include paths
     set(TEST_INCLUDES
-        ${CMAKE_SOURCE_DIR}/src
+        ${PROJECT_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/tests
-        ${CJSON_DIR}
     )
 
     # Per-module test executables — each registered separately with CTest
@@ -103,32 +111,32 @@ if(BUILD_TESTS)
 
     add_test_module(test_storage
         ${CMAKE_SOURCE_DIR}/tests/test_storage.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_db
         ${CMAKE_SOURCE_DIR}/tests/test_db.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_json
         ${CMAKE_SOURCE_DIR}/tests/test_json.c
-        ${CMAKE_SOURCE_DIR}/src/gemini.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_processor
         ${CMAKE_SOURCE_DIR}/tests/test_processor.c
         ${CMAKE_SOURCE_DIR}/src/processor.c
-        ${CMAKE_SOURCE_DIR}/src/gemini.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
-        ${CMAKE_SOURCE_DIR}/src/ocr_service.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.c
     )
     target_compile_definitions(test_processor PRIVATE TEST_BUILD)
 
@@ -139,93 +147,99 @@ if(BUILD_TESTS)
 
     add_test_module(test_edge_cases
         ${CMAKE_SOURCE_DIR}/tests/test_edge_cases.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_utils
         ${CMAKE_SOURCE_DIR}/tests/test_utils.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
     )
 
     add_test_module(test_http_client
         ${CMAKE_SOURCE_DIR}/tests/test_http_client.c
-        ${CMAKE_SOURCE_DIR}/src/http_client.c
+        ${CMAKE_SOURCE_DIR}/src/infra/http_client.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_bot
         ${CMAKE_SOURCE_DIR}/tests/test_bot.c
-        ${CMAKE_SOURCE_DIR}/src/bot.c
-        ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
         ${CMAKE_SOURCE_DIR}/src/processor.c
-        ${CMAKE_SOURCE_DIR}/src/gemini.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
         ${CMAKE_SOURCE_DIR}/src/config.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
-        ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
-        ${CMAKE_SOURCE_DIR}/src/http_client.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
-        ${CMAKE_SOURCE_DIR}/src/ocr_service.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.c
+        ${CMAKE_SOURCE_DIR}/src/infra/http_client.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.c
     )
 
     add_test_module(test_prompts
         ${CMAKE_SOURCE_DIR}/tests/test_prompts.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
-        ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_file_repository
         ${CMAKE_SOURCE_DIR}/tests/test_file_repository.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository.c
-        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
-        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_document_store
         ${CMAKE_SOURCE_DIR}/tests/test_document_store.c
-        ${CMAKE_SOURCE_DIR}/src/document_store.c
-        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/infra/document_store.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
     )
 
     add_test_module(test_event_bus
         ${CMAKE_SOURCE_DIR}/tests/test_event_bus.c
-        ${CMAKE_SOURCE_DIR}/src/event_bus.c
+        ${CMAKE_SOURCE_DIR}/src/infra/event_bus.c
     )
 endif()
 
 # ── Lint ──────────────────────────────────────────────────────────────────────
 find_program(CLANG_TIDY_EXE clang-tidy)
 if(CLANG_TIDY_EXE)
+    set(LINT_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/main.c
+        ${CMAKE_SOURCE_DIR}/src/config.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
+        ${CMAKE_SOURCE_DIR}/src/processor.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/db/db_postgres.c
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_supabase.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.c
+        ${CMAKE_SOURCE_DIR}/src/infra/http_client.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.c
+        ${CMAKE_SOURCE_DIR}/src/infra/document_store.c
+        ${CMAKE_SOURCE_DIR}/src/infra/event_bus.c
+    )
+
     add_custom_target(lint
         COMMAND ${CLANG_TIDY_EXE}
             -p ${CMAKE_BINARY_DIR}
-            ${CMAKE_SOURCE_DIR}/src/main.c
-            ${CMAKE_SOURCE_DIR}/src/config.c
-            ${CMAKE_SOURCE_DIR}/src/gemini.c
-            ${CMAKE_SOURCE_DIR}/src/processor.c
-            ${CMAKE_SOURCE_DIR}/src/bot.c
-            ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
-            ${CMAKE_SOURCE_DIR}/src/utils.c
-            ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
-            ${CMAKE_SOURCE_DIR}/src/storage_local.c
-            ${CMAKE_SOURCE_DIR}/src/db_postgres.c
-            ${CMAKE_SOURCE_DIR}/src/storage_supabase.c
-            ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
-            ${CMAKE_SOURCE_DIR}/src/http_client.c
-            ${CMAKE_SOURCE_DIR}/src/file_repository.c
-            ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
-            ${CMAKE_SOURCE_DIR}/src/ocr_service.c
-            ${CMAKE_SOURCE_DIR}/src/document_store.c
-            ${CMAKE_SOURCE_DIR}/src/event_bus.c
+            ${LINT_SOURCES}
         COMMENT "Running clang-tidy on source files"
         VERBATIM
     )
@@ -252,39 +266,58 @@ endif()
 # ── Format ────────────────────────────────────────────────────────────────────
 find_program(CLANG_FORMAT_EXE clang-format)
 if(CLANG_FORMAT_EXE)
-    set(ALL_C_FILES
-        ${SOURCES}
-        ${CMAKE_SOURCE_DIR}/tests/main.c
-        ${CMAKE_SOURCE_DIR}/tests/test_storage.c
-        ${CMAKE_SOURCE_DIR}/tests/test_db.c
-        ${CMAKE_SOURCE_DIR}/tests/test_json.c
-        ${CMAKE_SOURCE_DIR}/tests/test_config.c
-        ${CMAKE_SOURCE_DIR}/tests/test_edge_cases.c
-        ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
-        ${CMAKE_SOURCE_DIR}/tests/test_prompts.c
-        ${CMAKE_SOURCE_DIR}/tests/test_http_client.c
-        ${CMAKE_SOURCE_DIR}/src/utils.c
-        ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
-        ${CMAKE_SOURCE_DIR}/src/processor.h
-        ${CMAKE_SOURCE_DIR}/src/bot.h
-        ${CMAKE_SOURCE_DIR}/src/gemini.h
-        ${CMAKE_SOURCE_DIR}/src/config.h
-        ${CMAKE_SOURCE_DIR}/src/db.h
-        ${CMAKE_SOURCE_DIR}/src/db_backend.h
-        ${CMAKE_SOURCE_DIR}/src/storage.h
-        ${CMAKE_SOURCE_DIR}/src/storage_backend.h
-        ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.h
-        ${CMAKE_SOURCE_DIR}/src/http_client.h
-    )
-
     add_custom_target(format
-        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_C_FILES}
+        COMMAND ${CLANG_FORMAT_EXE} -i
+            ${SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot.h
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.h
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.h
+            ${CMAKE_SOURCE_DIR}/src/config.h
+            ${CMAKE_SOURCE_DIR}/src/processor.h
+            ${CMAKE_SOURCE_DIR}/src/utils.h
+            ${CMAKE_SOURCE_DIR}/src/db/db.h
+            ${CMAKE_SOURCE_DIR}/src/db/db_backend.h
+            ${CMAKE_SOURCE_DIR}/src/storage/storage.h
+            ${CMAKE_SOURCE_DIR}/src/storage/storage_backend.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/gemini.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.h
+            ${CMAKE_SOURCE_DIR}/src/infra/http_client.h
+            ${CMAKE_SOURCE_DIR}/src/infra/file_repository.h
+            ${CMAKE_SOURCE_DIR}/src/infra/document_store.h
+            ${CMAKE_SOURCE_DIR}/src/infra/event_bus.h
+            ${CMAKE_SOURCE_DIR}/tests/main.c
+            ${CMAKE_SOURCE_DIR}/tests/test_*.c
+            ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
+            ${CMAKE_SOURCE_DIR}/tests/test_runner.h
         COMMENT "Formatting all source files with clang-format"
         VERBATIM
     )
 
     add_custom_target(format-check
-        COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror ${ALL_C_FILES}
+        COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror
+            ${SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot.h
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.h
+            ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.h
+            ${CMAKE_SOURCE_DIR}/src/config.h
+            ${CMAKE_SOURCE_DIR}/src/processor.h
+            ${CMAKE_SOURCE_DIR}/src/utils.h
+            ${CMAKE_SOURCE_DIR}/src/db/db.h
+            ${CMAKE_SOURCE_DIR}/src/db/db_backend.h
+            ${CMAKE_SOURCE_DIR}/src/storage/storage.h
+            ${CMAKE_SOURCE_DIR}/src/storage/storage_backend.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/gemini.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.h
+            ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.h
+            ${CMAKE_SOURCE_DIR}/src/infra/http_client.h
+            ${CMAKE_SOURCE_DIR}/src/infra/file_repository.h
+            ${CMAKE_SOURCE_DIR}/src/infra/document_store.h
+            ${CMAKE_SOURCE_DIR}/src/infra/event_bus.h
+            ${CMAKE_SOURCE_DIR}/tests/main.c
+            ${CMAKE_SOURCE_DIR}/tests/test_*.c
+            ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
+            ${CMAKE_SOURCE_DIR}/tests/test_runner.h
         COMMENT "Checking formatting with clang-format"
         VERBATIM
     )
@@ -297,21 +330,13 @@ option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 if(ENABLE_COVERAGE AND BUILD_TESTS)
     set(COVERAGE_FLAGS --coverage -O0 -g -fno-inline)
-
-    target_compile_options(test_storage PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_storage PRIVATE --coverage)
-    target_compile_options(test_db PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_db PRIVATE --coverage)
-    target_compile_options(test_json PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_json PRIVATE --coverage)
-    target_compile_options(test_config PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_config PRIVATE --coverage)
-    target_compile_options(test_edge_cases PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_edge_cases PRIVATE --coverage)
-    target_compile_options(test_utils PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_utils PRIVATE --coverage)
-    target_compile_options(test_bot PRIVATE ${COVERAGE_FLAGS})
-    target_link_options(test_bot PRIVATE --coverage)
+    set(TEST_TARGETS test_storage test_db test_json test_config test_edge_cases
+                     test_utils test_bot test_prompts test_processor test_http_client
+                     test_file_repository test_document_store test_event_bus)
+    foreach(T ${TEST_TARGETS})
+        target_compile_options(${T} PRIVATE ${COVERAGE_FLAGS})
+        target_link_options(${T} PRIVATE --coverage)
+    endforeach()
 
     find_program(LCOV_EXE lcov)
     find_program(GENHTML_EXE genhtml)
