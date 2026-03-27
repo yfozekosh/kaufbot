@@ -508,19 +508,19 @@ TEST_CASE(gemini_parse_500_error_format) {
 /* ── gemini_new / gemini_free edge cases ───────────────────────────── */
 
 TEST_CASE(gemini_new_null_key) {
-    GeminiClient *c = gemini_new(NULL, "model", NULL, 0);
+    GeminiClient *c = gemini_new(NULL, "model", NULL, 0, NULL, 0);
     ASSERT_TRUE(c == NULL);
     TEST_PASS();
 }
 
 TEST_CASE(gemini_new_null_model) {
-    GeminiClient *c = gemini_new("key", NULL, NULL, 0);
+    GeminiClient *c = gemini_new("key", NULL, NULL, 0, NULL, 0);
     ASSERT_TRUE(c == NULL);
     TEST_PASS();
 }
 
 TEST_CASE(gemini_new_and_free) {
-    GeminiClient *c = gemini_new("test_key", "gemini-2.5-flash", NULL, 0);
+    GeminiClient *c = gemini_new("test_key", "gemini-2.5-flash", NULL, 0, NULL, 0);
     ASSERT_NOT_NULL(c);
     gemini_free(c);
     TEST_PASS();

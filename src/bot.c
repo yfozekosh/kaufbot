@@ -11,16 +11,11 @@
 #include <string.h>
 #include <unistd.h>
 
-#define TG_API_BASE                  "https://api.telegram.org/bot"
-#define TG_FILE_BASE                 "https://api.telegram.org/file/bot"
-#define POLL_TIMEOUT                 30
-#define MAX_REPLY_LEN                4096
-#define MAX_FILE_MB                  20
+/* URL buffer large enough for API base + token + endpoint */
+#define BOT_URL_BUF_LEN 2048
+
 #define MAX_LIST_ENTRIES             10
-#define HTTP_TIMEOUT_SECS            60L
-#define HTTP_DOWNLOAD_TIMEOUT_SECS   120L
-#define RECONNECT_DELAY_SECS         5
-#define RETRY_DELAY_SECS             2
+#define MAX_REPLY_LEN                4096
 #define TG_CMD_START                 "/start"
 #define TG_CMD_HELP                  "/help"
 #define TG_CMD_LIST                  "/list"
@@ -129,8 +124,9 @@ void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
         return;
     }
 
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s%s/sendMessage", TG_API_BASE, bot->cfg->telegram_token);
+    char url[BOT_URL_BUF_LEN];
+    snprintf(url, sizeof(url), "%s%s/sendMessage", bot->cfg->telegram_api_base,
+             bot->cfg->telegram_token);
 
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
@@ -148,15 +144,16 @@ void tg_send_message(const TgBot *bot, int64_t chat_id, const char *text) {
     free(resp);
 }
 
-static void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, const char *text,
-                                          int64_t db_file_id) {
+void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, const char *text,
+                                   int64_t db_file_id) {
     if (!text) {
         LOG_ERROR("tg_send_message_with_keyboard: text is NULL");
         return;
     }
 
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s%s/sendMessage", TG_API_BASE, bot->cfg->telegram_token);
+    char url[BOT_URL_BUF_LEN];
+    snprintf(url, sizeof(url), "%s%s/sendMessage", bot->cfg->telegram_api_base,
+             bot->cfg->telegram_token);
 
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
@@ -198,9 +195,10 @@ static void tg_send_message_with_keyboard(const TgBot *bot, int64_t chat_id, con
     free(resp);
 }
 
-static void tg_answer_callback_query(const TgBot *bot, const char *query_id, const char *text) {
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s%s/answerCallbackQuery", TG_API_BASE, bot->cfg->telegram_token);
+void tg_answer_callback_query(const TgBot *bot, const char *query_id, const char *text) {
+    char url[BOT_URL_BUF_LEN];
+    snprintf(url, sizeof(url), "%s%s/answerCallbackQuery", bot->cfg->telegram_api_base,
+             bot->cfg->telegram_token);
 
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddStringToObject(payload, "callback_query_id", query_id);
@@ -219,9 +217,10 @@ static void tg_answer_callback_query(const TgBot *bot, const char *query_id, con
     free(resp);
 }
 
-static void tg_delete_message(const TgBot *bot, int64_t chat_id, int64_t message_id) {
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s%s/deleteMessage", TG_API_BASE, bot->cfg->telegram_token);
+void tg_delete_message(const TgBot *bot, int64_t chat_id, int64_t message_id) {
+    char url[BOT_URL_BUF_LEN];
+    snprintf(url, sizeof(url), "%s%s/deleteMessage", bot->cfg->telegram_api_base,
+             bot->cfg->telegram_token);
 
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddNumberToObject(payload, "chat_id", (double)chat_id);
@@ -240,16 +239,16 @@ static void tg_delete_message(const TgBot *bot, int64_t chat_id, int64_t message
 }
 
 static char *tg_get_file_path(const TgBot *bot, const char *file_id) {
-    char url[MAX_URL_LEN];
+    char url[BOT_URL_BUF_LEN];
     char *encoded_id = url_percent_encode(file_id);
     if (!encoded_id)
         return NULL;
 
-    snprintf(url, sizeof(url), "%s%s/getFile?file_id=%s", TG_API_BASE, bot->cfg->telegram_token,
-             encoded_id);
+    snprintf(url, sizeof(url), "%s%s/getFile?file_id=%s", bot->cfg->telegram_api_base,
+             bot->cfg->telegram_token, encoded_id);
     free(encoded_id);
 
-    char *resp = http_get(url, HTTP_TIMEOUT_SECS);
+    char *resp = http_get(url, bot->cfg->telegram_http_timeout_secs);
     if (!resp)
         return NULL;
 
@@ -278,8 +277,9 @@ static char *tg_get_file_path(const TgBot *bot, const char *file_id) {
 }
 
 static uint8_t *tg_download_file(const TgBot *bot, const char *file_path, size_t *out_len) {
-    char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s%s/%s", TG_FILE_BASE, bot->cfg->telegram_token, file_path);
+    char url[BOT_URL_BUF_LEN];
+    snprintf(url, sizeof(url), "%s%s/%s", bot->cfg->telegram_file_base, bot->cfg->telegram_token,
+             file_path);
     LOG_DEBUG("downloading file: %s", file_path);
 
     HttpClient *client = http_client_new();
@@ -287,7 +287,7 @@ static uint8_t *tg_download_file(const TgBot *bot, const char *file_path, size_t
         return NULL;
 
     HttpResponse resp;
-    int rc = http_client_get(client, url, HTTP_DOWNLOAD_TIMEOUT_SECS, &resp);
+    int rc = http_client_get(client, url, bot->cfg->telegram_download_timeout_secs, &resp);
 
     if (rc != 0 || !resp.success) {
         LOG_ERROR("download failed: %s", resp.error);
@@ -537,8 +537,8 @@ static void dispatch_document(TgBot *bot, int64_t chat_id, int64_t user_id, cJSO
     cJSON *fname = cJSON_GetObjectItem(doc, "file_name");
     cJSON *fsize = cJSON_GetObjectItem(doc, "file_size");
 
-    if (cJSON_IsNumber(fsize) && fsize->valuedouble > MAX_FILE_MB * 1024.0 * 1024.0) {
-        LOG_WARN("user %lld attempted to upload file exceeding 20MB limit", (long long)user_id);
+    if (cJSON_IsNumber(fsize) && fsize->valuedouble > (double)bot->cfg->max_file_size_bytes) {
+        LOG_WARN("user %lld attempted to upload file exceeding limit", (long long)user_id);
         tg_send_message(bot, chat_id, "File exceeds 20 MB - Telegram bot API limit.");
         return;
     }
@@ -698,20 +698,22 @@ void bot_stop(TgBot *bot) {
 }
 
 void bot_start(TgBot *bot) {
-    char url[MAX_URL_LEN];
-    LOG_INFO("starting long-poll loop (timeout=%ds)", POLL_TIMEOUT);
+    char url[BOT_URL_BUF_LEN];
+    LOG_INFO("starting long-poll loop (timeout=%lds)", bot->cfg->telegram_poll_timeout_secs);
 
     while (atomic_load(&bot->running)) {
         snprintf(
             url, sizeof(url),
             "%s%s/"
-            "getUpdates?offset=%ld&timeout=%d&allowed_updates=[\"message\",\"callback_query\"]",
-            TG_API_BASE, bot->cfg->telegram_token, bot->offset, POLL_TIMEOUT);
+            "getUpdates?offset=%ld&timeout=%ld&allowed_updates=[\"message\",\"callback_query\"]",
+            bot->cfg->telegram_api_base, bot->cfg->telegram_token, bot->offset,
+            bot->cfg->telegram_poll_timeout_secs);
 
-        char *body = http_get(url, POLL_TIMEOUT);
+        char *body = http_get(url, bot->cfg->telegram_poll_timeout_secs);
         if (!body) {
-            LOG_ERROR("getUpdates failed, retrying in %ds", RECONNECT_DELAY_SECS);
-            sleep(RECONNECT_DELAY_SECS);
+            LOG_ERROR("getUpdates failed, retrying in %lds",
+                      bot->cfg->telegram_reconnect_delay_secs);
+            sleep(bot->cfg->telegram_reconnect_delay_secs);
             continue;
         }
 
@@ -720,7 +722,7 @@ void bot_start(TgBot *bot) {
 
         if (!json) {
             LOG_ERROR("failed to parse getUpdates response");
-            sleep(RETRY_DELAY_SECS);
+            sleep(bot->cfg->telegram_retry_delay_secs);
             continue;
         }
 
@@ -730,7 +732,7 @@ void bot_start(TgBot *bot) {
             LOG_ERROR("getUpdates not ok: %s",
                       cJSON_IsString(desc) ? desc->valuestring : "unknown");
             cJSON_Delete(json);
-            sleep(RECONNECT_DELAY_SECS);
+            sleep(bot->cfg->telegram_reconnect_delay_secs);
             continue;
         }
 

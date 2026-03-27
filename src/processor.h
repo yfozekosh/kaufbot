@@ -1,7 +1,8 @@
 #ifndef PROCESSOR_H
 #define PROCESSOR_H
 
-#include "db_backend.h"
+#include "file_repository.h"
+#include "ocr_service.h"
 #include "storage_backend.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -17,7 +18,7 @@ int strategy_notify_and_skip(const FileRecord *existing, char *reply_buf, size_t
 typedef struct Processor Processor;
 
 /* All pointers are borrowed – processor does NOT free them. */
-Processor *processor_new(DBBackend *db, StorageBackend *storage, void *gemini, /* GeminiClient* */
+Processor *processor_new(FileRepository *repo, StorageBackend *storage, OCRService *ocr,
                          DuplicateStrategyFn dup_strategy);
 
 void processor_free(Processor *p);

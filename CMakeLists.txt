@@ -32,11 +32,17 @@ set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/gemini.c
     ${CMAKE_SOURCE_DIR}/src/processor.c
     ${CMAKE_SOURCE_DIR}/src/bot.c
+    ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
     ${CMAKE_SOURCE_DIR}/src/utils.c
     ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
     ${CMAKE_SOURCE_DIR}/src/storage_local.c
     ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
     ${CMAKE_SOURCE_DIR}/src/http_client.c
+    ${CMAKE_SOURCE_DIR}/src/file_repository.c
+    ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
+    ${CMAKE_SOURCE_DIR}/src/ocr_service.c
+    ${CMAKE_SOURCE_DIR}/src/document_store.c
+    ${CMAKE_SOURCE_DIR}/src/event_bus.c
     ${CJSON_DIR}/cJSON.c
 )
 
@@ -120,6 +126,9 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/storage_local.c
         ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/ocr_service.c
     )
     target_compile_definitions(test_processor PRIVATE TEST_BUILD)
 
@@ -150,6 +159,7 @@ if(BUILD_TESTS)
     add_test_module(test_bot
         ${CMAKE_SOURCE_DIR}/tests/test_bot.c
         ${CMAKE_SOURCE_DIR}/src/bot.c
+        ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
         ${CMAKE_SOURCE_DIR}/src/processor.c
         ${CMAKE_SOURCE_DIR}/src/gemini.c
         ${CMAKE_SOURCE_DIR}/src/config.c
@@ -158,6 +168,9 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/utils.c
         ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
         ${CMAKE_SOURCE_DIR}/src/http_client.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/ocr_service.c
     )
 
     add_test_module(test_prompts
@@ -165,6 +178,27 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
         ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
         ${CMAKE_SOURCE_DIR}/src/utils.c
+    )
+
+    add_test_module(test_file_repository
+        ${CMAKE_SOURCE_DIR}/tests/test_file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository.c
+        ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
+        ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
+        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+    )
+
+    add_test_module(test_document_store
+        ${CMAKE_SOURCE_DIR}/tests/test_document_store.c
+        ${CMAKE_SOURCE_DIR}/src/document_store.c
+        ${CMAKE_SOURCE_DIR}/src/storage_local.c
+        ${CMAKE_SOURCE_DIR}/src/utils.c
+    )
+
+    add_test_module(test_event_bus
+        ${CMAKE_SOURCE_DIR}/tests/test_event_bus.c
+        ${CMAKE_SOURCE_DIR}/src/event_bus.c
     )
 endif()
 
@@ -179,6 +213,7 @@ if(CLANG_TIDY_EXE)
             ${CMAKE_SOURCE_DIR}/src/gemini.c
             ${CMAKE_SOURCE_DIR}/src/processor.c
             ${CMAKE_SOURCE_DIR}/src/bot.c
+            ${CMAKE_SOURCE_DIR}/src/bot_telegram.c
             ${CMAKE_SOURCE_DIR}/src/utils.c
             ${CMAKE_SOURCE_DIR}/src/db_sqlite.c
             ${CMAKE_SOURCE_DIR}/src/storage_local.c
@@ -186,6 +221,11 @@ if(CLANG_TIDY_EXE)
             ${CMAKE_SOURCE_DIR}/src/storage_supabase.c
             ${CMAKE_SOURCE_DIR}/src/prompt_fetcher.c
             ${CMAKE_SOURCE_DIR}/src/http_client.c
+            ${CMAKE_SOURCE_DIR}/src/file_repository.c
+            ${CMAKE_SOURCE_DIR}/src/file_repository_memory.c
+            ${CMAKE_SOURCE_DIR}/src/ocr_service.c
+            ${CMAKE_SOURCE_DIR}/src/document_store.c
+            ${CMAKE_SOURCE_DIR}/src/event_bus.c
         COMMENT "Running clang-tidy on source files"
         VERBATIM
     )

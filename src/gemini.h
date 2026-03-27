@@ -7,9 +7,11 @@
 typedef struct GeminiClient GeminiClient;
 
 /* Create a Gemini client. api_key, model, and fallback_model are copied internally.
- * fallback_enabled controls whether rate-limit fallback is active. */
+ * fallback_enabled controls whether rate-limit fallback is active.
+ * api_base overrides the API endpoint (use NULL for default).
+ * timeout_secs sets HTTP timeout in seconds (use 0 for default 600s). */
 GeminiClient *gemini_new(const char *api_key, const char *model, const char *fallback_model,
-                         int fallback_enabled);
+                         int fallback_enabled, const char *api_base, long timeout_secs);
 
 /* Free the client. */
 void gemini_free(GeminiClient *client);

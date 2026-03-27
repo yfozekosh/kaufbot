@@ -36,11 +36,13 @@
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
-#define MAX_ALLOWED_USERS 32
-#define MAX_PATH_LEN      512
-#define MAX_TOKEN_LEN     256
-#define MAX_MODEL_LEN     128
-#define MAX_URL_LEN       512
+#define MAX_ALLOWED_USERS    32
+#define MAX_PATH_LEN         512
+#define MAX_TOKEN_LEN        256
+#define MAX_MODEL_LEN        128
+#define MAX_URL_LEN          1024
+#define GEMINI_URL_BUF_LEN   1024
+#define GEMINI_MAX_MODEL_LEN 128
 
 /* ── Backend types ────────────────────────────────────────────────────────── */
 
@@ -75,6 +77,21 @@ typedef struct {
 
     int64_t allowed_users[MAX_ALLOWED_USERS];
     int allowed_users_count;
+
+    /* Telegram API configuration */
+    char telegram_api_base[MAX_URL_LEN];
+    char telegram_file_base[MAX_URL_LEN];
+    long telegram_poll_timeout_secs;
+    long telegram_http_timeout_secs;
+    long telegram_download_timeout_secs;
+    long telegram_reconnect_delay_secs;
+    long telegram_retry_delay_secs;
+    size_t max_file_size_bytes;
+
+    /* Gemini API configuration */
+    char gemini_api_base[GEMINI_URL_BUF_LEN];
+    long gemini_http_timeout_secs;
+    long gemini_connect_timeout_secs;
 } Config;
 
 /* Load config from environment variables.

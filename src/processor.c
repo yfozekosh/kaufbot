@@ -1,7 +1,6 @@
 #include "processor.h"
 #include "cJSON.h"
 #include "config.h"
-#include "gemini.h"
 #include "storage.h"
 
 #include <stdio.h>
@@ -9,9 +8,9 @@
 #include <string.h>
 
 struct Processor {
-    DBBackend *db;
+    FileRepository *repo;
     StorageBackend *storage;
-    GeminiClient *gemini;
+    OCRService *ocr;
     DuplicateStrategyFn dup_strategy;
 };
 
@@ -32,9 +31,9 @@ int strategy_notify_and_skip(const FileRecord *existing, char *reply_buf, size_t
 
 /* ── constructor / destructor ─────────────────────────────────────────────── */
 
-Processor *processor_new(DBBackend *db, StorageBackend *storage, void *gemini,
+Processor *processor_new(FileRepository *repo, StorageBackend *storage, OCRService *ocr,
                          DuplicateStrategyFn dup_strategy) {
-    if (!db || !storage || !gemini) {
+    if (!repo || !storage || !ocr) {
         LOG_ERROR("processor_new: required parameter is NULL");
         return NULL;
     }
@@ -44,9 +43,9 @@ Processor *processor_new(DBBackend *db, StorageBackend *storage, void *gemini,
         LOG_ERROR("failed to allocate processor");
         return NULL;
     }
-    p->db = db;
+    p->repo = repo;
     p->storage = storage;
-    p->gemini = (GeminiClient *)gemini;
+    p->ocr = ocr;
     p->dup_strategy = dup_strategy ? dup_strategy : strategy_notify_and_skip;
     return p;
 }
@@ -153,21 +152,25 @@ static int processor_save_file(Processor *p, const char *original_name, const ui
     snprintf(rec->file_hash, DB_HASH_LEN, "%s", hash);
     rec->is_ocr_processed = 0;
 
-    if (db_backend_insert(p->db, rec) != 0) {
-        LOG_ERROR("database error while saving file record");
+    int64_t new_id = 0;
+    int rc = file_repo_insert(p->repo, original_name, hash, saved_name, &new_id);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error while saving file record");
         snprintf(reply_buf, reply_buf_len, "Database error while saving file record.");
         return -1;
     }
+    rec->id = new_id;
     return 0;
 }
 
 static char *processor_run_ocr(Processor *p, const char *original_name, const uint8_t *data,
                                size_t data_len, const char *saved_name, const FileRecord *rec,
                                char *reply_buf, size_t reply_buf_len) {
-    LOG_INFO("sending file to Gemini for OCR");
-    char *ocr_text = gemini_extract_text(p->gemini, data, data_len, original_name);
+    LOG_INFO("sending file to OCR service for text extraction");
+    char *ocr_text = NULL;
+    int rc = ocr_extract_text(p->ocr, data, data_len, original_name, &ocr_text);
 
-    if (!ocr_text) {
+    if (rc != OCR_OK || !ocr_text) {
         LOG_ERROR("OCR extraction failed");
         snprintf(reply_buf, reply_buf_len,
                  "\xF0\x9F\x94\xB4 *OCR Failed*\n\n"
@@ -186,8 +189,9 @@ static char *processor_run_ocr(Processor *p, const char *original_name, const ui
         LOG_ERROR("failed to write OCR file %s", ocr_filename);
     }
 
-    if (db_backend_mark_ocr_done(p->db, rec->id, ocr_filename) != 0) {
-        LOG_ERROR("failed to mark OCR done in DB for file id=%lld", (long long)rec->id);
+    rc = file_repo_mark_ocr_complete(p->repo, rec->id, ocr_filename);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error marking OCR done for file id=%lld", (long long)rec->id);
     }
     return ocr_text;
 }
@@ -196,11 +200,12 @@ static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *
                                      const char *saved_name, const char *ocr_filename,
                                      const char *original_name, size_t data_len, char *reply_buf,
                                      size_t reply_buf_len) {
-    LOG_INFO("sending OCR text to Gemini for parsing");
-    char *parsed_json = gemini_parse_receipt(p->gemini, ocr_text);
+    LOG_INFO("sending OCR text to OCR service for parsing");
+    char *parsed_json = NULL;
+    int rc = ocr_parse_receipt(p->ocr, ocr_text, &parsed_json);
 
-    if (!parsed_json) {
-        LOG_ERROR("gemini_parse_receipt returned NULL");
+    if (rc != OCR_OK || !parsed_json) {
+        LOG_ERROR("OCR parsing failed");
         snprintf(reply_buf, reply_buf_len,
                  "\xE2\x9A\xA0\xEF\xB8\x8F *Parsing Failed*\n\n"
                  "\xF0\x9F\x93\x84 File: `%s`\n"
@@ -212,8 +217,9 @@ static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *
         return NULL;
     }
 
-    if (db_backend_mark_parsing_done(p->db, file_id, parsed_json) != 0) {
-        LOG_ERROR("failed to save parsed receipt");
+    rc = file_repo_mark_parsing_complete(p->repo, file_id, parsed_json);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error saving parsed receipt");
     }
     return parsed_json;
 }
@@ -234,13 +240,13 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
     storage_sha256_hex(data, data_len, hash);
 
     FileRecord existing;
-    int found = db_backend_find_by_hash(p->db, hash, &existing);
-    if (found == 0) {
+    int found = file_repo_find_by_hash(p->repo, hash, &existing);
+    if (found == FILE_REPO_OK) {
         LOG_WARN("duplicate file detected");
         if (!p->dup_strategy(&existing, reply_buf, reply_buf_len))
             return;
-    } else if (found == -1) {
-        LOG_ERROR("database error while checking for duplicates");
+    } else if (found != FILE_REPO_ERR_NOT_FOUND) {
+        LOG_ERROR("repository error while checking for duplicates");
         snprintf(reply_buf, reply_buf_len, "Database error while checking for duplicates.");
         return;
     }
@@ -281,19 +287,18 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                  "Saved to database but JSON was invalid.\n\n"
                  "\xF0\x9F\x94\x91 ID: `%lld`",
                  rec.saved_file_name, ocr_filename, original_name, data_len, (long long)rec.id);
-    } else {
-        processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
-                                 original_name, data_len, json);
-        cJSON_Delete(json);
-        size_t len = strlen(reply_buf);
-        if (len + 32 < reply_buf_len) {
-            snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
-                     (long long)rec.id);
-        }
+        free(ocr_text);
+        free(parsed_json);
+        return;
     }
-
-    free(ocr_text);
-    free(parsed_json);
+    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
+                             original_name, data_len, json);
+    cJSON_Delete(json);
+    size_t len = strlen(reply_buf);
+    if (len + 32 < reply_buf_len) {
+        snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
+                 (long long)rec.id);
+    }
 }
 
 /* ── retry OCR ────────────────────────────────────────────────────────────── */
@@ -304,7 +309,8 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
 
     /* Look up file record */
     FileRecord rec;
-    if (db_backend_find_by_id(p->db, file_id, &rec) != 0) {
+    int rc = file_repo_find_by_id(p->repo, file_id, &rec);
+    if (rc != FILE_REPO_OK) {
         snprintf(reply_buf, reply_buf_len, "\xF0\x9F\x94\xB4 File with ID `%lld` not found.",
                  (long long)file_id);
         return -1;
@@ -323,7 +329,7 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
         return -1;
     }
 
-    char *ocr_text = storage_backend_read_text(p->storage, rec.ocr_file_name);
+    char *ocr_text = storage_backend_read_text(file_repo_get_storage(p->repo), rec.ocr_file_name);
     if (!ocr_text) {
         snprintf(reply_buf, reply_buf_len,
                  "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
@@ -335,10 +341,11 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     }
 
     /* Re-parse the receipt */
-    char *parsed_json = gemini_parse_receipt(p->gemini, ocr_text);
+    char *parsed_json = NULL;
+    rc = ocr_parse_receipt(p->ocr, ocr_text, &parsed_json);
     free(ocr_text);
 
-    if (!parsed_json) {
+    if (rc != OCR_OK || !parsed_json) {
         snprintf(reply_buf, reply_buf_len,
                  "\xE2\x9A\xA0\xEF\xB8\x8F *Retry: Parsing Failed*\n\n"
                  "\xF0\x9F\x93\x84 File: `%s`\n"
@@ -348,8 +355,9 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
         return -1;
     }
 
-    if (db_backend_mark_parsing_done(p->db, file_id, parsed_json) != 0) {
-        LOG_ERROR("failed to save parsed receipt");
+    rc = file_repo_mark_parsing_complete(p->repo, file_id, parsed_json);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error saving parsed receipt");
     }
 
     cJSON *json = cJSON_Parse(parsed_json);

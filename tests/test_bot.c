@@ -1,7 +1,10 @@
 #include "bot.h"
+#include "bot_telegram.h"
 #include "config.h"
 #include "db_backend.h"
+#include "file_repository.h"
 #include "gemini.h"
+#include "ocr_service.h"
 #include "processor.h"
 #include "storage_backend.h"
 #include "test_helpers.h"
@@ -23,6 +26,23 @@ static Config make_test_config(void) {
     snprintf(cfg.db_path, MAX_PATH_LEN, "/tmp/kaufbot_test_bot.db");
     cfg.allowed_users[0] = 12345;
     cfg.allowed_users_count = 1;
+
+    /* Telegram API configuration */
+    snprintf(cfg.telegram_api_base, MAX_URL_LEN, "https://api.telegram.org/bot");
+    snprintf(cfg.telegram_file_base, MAX_URL_LEN, "https://api.telegram.org/file/bot");
+    cfg.telegram_poll_timeout_secs = 30;
+    cfg.telegram_http_timeout_secs = 60;
+    cfg.telegram_download_timeout_secs = 120;
+    cfg.telegram_reconnect_delay_secs = 5;
+    cfg.telegram_retry_delay_secs = 2;
+    cfg.max_file_size_bytes = (size_t)20 * 1024 * 1024;
+
+    /* Gemini API configuration */
+    snprintf(cfg.gemini_api_base, GEMINI_URL_BUF_LEN,
+             "https://generativelanguage.googleapis.com/v1beta/models");
+    cfg.gemini_http_timeout_secs = 600;
+    cfg.gemini_connect_timeout_secs = 15;
+
     return cfg;
 }
 
@@ -31,9 +51,11 @@ TEST_CASE(bot_new_and_free) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     TgBot *bot = bot_new(&cfg, p, db, storage);
     ASSERT_NOT_NULL(bot);
@@ -42,7 +64,8 @@ TEST_CASE(bot_new_and_free) {
     bot_free(NULL);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -54,42 +77,47 @@ TEST_CASE(bot_stop_null) {
 
 /* ── processor lifecycle tests ─────────────────────────────────────── */
 
-TEST_CASE(processor_new_null_db) {
+TEST_CASE(processor_new_null_repo) {
     Config cfg = make_test_config();
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
 
-    Processor *p = processor_new(NULL, storage, gemini, NULL);
+    Processor *p = processor_new(NULL, storage, ocr, NULL);
     ASSERT_TRUE(p == NULL);
 
-    gemini_free(gemini);
+    ocr_service_free(ocr);
     storage_backend_close(storage);
     TEST_PASS();
 }
 
 TEST_CASE(processor_new_null_storage) {
     Config cfg = make_test_config();
-    DBBackend *db = db_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
+    FileRepository *repo = file_repository_memory_new(NULL);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
 
-    Processor *p = processor_new(db, NULL, gemini, NULL);
+    /* processor_new rejects NULL storage even with valid repo */
+    Processor *p = processor_new(repo, NULL, ocr, NULL);
     ASSERT_TRUE(p == NULL);
 
-    gemini_free(gemini);
-    db_backend_close(db);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     TEST_PASS();
 }
 
-TEST_CASE(processor_new_null_gemini) {
+TEST_CASE(processor_new_null_ocr) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
+    FileRepository *repo = file_repository_db_backend(db, storage);
 
-    Processor *p = processor_new(db, storage, NULL, NULL);
+    Processor *p = processor_new(repo, storage, NULL, NULL);
     ASSERT_TRUE(p == NULL);
 
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -99,16 +127,19 @@ TEST_CASE(processor_new_and_free) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
 
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
     ASSERT_NOT_NULL(p);
 
     processor_free(p);
     processor_free(NULL);
 
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -118,14 +149,17 @@ TEST_CASE(processor_new_custom_strategy) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
 
-    Processor *p = processor_new(db, storage, gemini, strategy_notify_and_skip);
+    Processor *p = processor_new(repo, storage, ocr, strategy_notify_and_skip);
     ASSERT_NOT_NULL(p);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -137,9 +171,11 @@ TEST_CASE(processor_handle_null_params) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     char reply[256];
 
@@ -159,7 +195,8 @@ TEST_CASE(processor_handle_null_params) {
     processor_handle_file(p, "test.jpg", (const uint8_t *)"data", 4, reply, 0, NULL);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -202,9 +239,11 @@ TEST_CASE(processor_retry_ocr_not_found) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     char reply[512];
     int rc = processor_retry_ocr(p, 9999, reply, sizeof(reply));
@@ -212,7 +251,8 @@ TEST_CASE(processor_retry_ocr_not_found) {
     ASSERT_TRUE(strstr(reply, "not found") != NULL);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -224,9 +264,11 @@ TEST_CASE(processor_retry_ocr_no_ocr_file) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     /* Insert a file record without OCR */
     FileRecord rec;
@@ -244,7 +286,8 @@ TEST_CASE(processor_retry_ocr_no_ocr_file) {
     ASSERT_TRUE(strstr(reply, "Cannot Retry") != NULL);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -256,9 +299,11 @@ TEST_CASE(processor_retry_ocr_with_ocr_text) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     /* Insert a file record with OCR */
     FileRecord rec;
@@ -284,7 +329,8 @@ TEST_CASE(processor_retry_ocr_with_ocr_text) {
     ASSERT_TRUE(strstr(reply, "No OCR text") == NULL);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -297,15 +343,18 @@ TEST_CASE(processor_retry_ocr_null_params) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     ASSERT_EQ(-1, processor_retry_ocr(p, 1, NULL, sizeof(reply)));
     ASSERT_EQ(-1, processor_retry_ocr(p, 1, reply, 0));
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -318,9 +367,11 @@ TEST_CASE(processor_duplicate_detection) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     const uint8_t data[] = "test duplicate data";
     char reply1[512] = {0};
@@ -336,7 +387,8 @@ TEST_CASE(processor_duplicate_detection) {
                 strlen(reply2) > 0);
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -349,9 +401,11 @@ TEST_CASE(processor_empty_data) {
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
     storage_backend_ensure_dirs(storage);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     char reply[512] = {0};
     processor_handle_file(p, "empty.jpg", (const uint8_t *)"", 0, reply, sizeof(reply), NULL);
@@ -359,7 +413,8 @@ TEST_CASE(processor_empty_data) {
     ASSERT_TRUE(strlen(reply) > 0 || reply[0] == '\0');
 
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();
@@ -367,6 +422,51 @@ TEST_CASE(processor_empty_data) {
 
 TEST_CASE(processor_null_processor_free) {
     processor_free(NULL);
+    TEST_PASS();
+}
+
+/* ── OCR service wrapper null args ────────────────────────────────────── */
+
+TEST_CASE(ocr_extract_text_null_args) {
+    char *out = NULL;
+    const uint8_t data[] = "test";
+
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text(NULL, data, 4, "test.jpg", &out));
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, NULL, 4, "test.jpg", &out));
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, data, 4, NULL, &out));
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, data, 4, "test.jpg", NULL));
+    TEST_PASS();
+}
+
+TEST_CASE(ocr_parse_receipt_null_args) {
+    char *out = NULL;
+
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt(NULL, "text", &out));
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt((OCRService *)1, NULL, &out));
+    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt((OCRService *)1, "text", NULL));
+    TEST_PASS();
+}
+
+TEST_CASE(ocr_get_model_null) {
+    ASSERT_TRUE(ocr_get_model(NULL) == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(ocr_is_healthy_null) {
+    ASSERT_EQ(0, ocr_is_healthy(NULL));
+    TEST_PASS();
+}
+
+/* ── bot_telegram / message sender tests ──────────────────────────────── */
+
+TEST_CASE(message_sender_telegram_null) {
+    MessageSender *sender = message_sender_telegram_new(NULL);
+    ASSERT_TRUE(sender == NULL);
+    TEST_PASS();
+}
+
+TEST_CASE(message_sender_free_null) {
+    message_sender_free(NULL);
     TEST_PASS();
 }
 
@@ -396,9 +496,11 @@ TEST_CASE(bot_start_immediate_exit) {
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
     StorageBackend *storage = storage_backend_open(&cfg);
-    GeminiClient *gemini = gemini_new(cfg.gemini_api_key, cfg.gemini_model,
-                                      cfg.gemini_fallback_model, cfg.gemini_fallback_enabled);
-    Processor *p = processor_new(db, storage, gemini, NULL);
+    FileRepository *repo = file_repository_db_backend(db, storage);
+    OCRService *ocr =
+        ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
+                               cfg.gemini_fallback_enabled, NULL, 0);
+    Processor *p = processor_new(repo, storage, ocr, NULL);
 
     TgBot *bot = bot_new(&cfg, p, db, storage);
     ASSERT_NOT_NULL(bot);
@@ -409,7 +511,8 @@ TEST_CASE(bot_start_immediate_exit) {
 
     bot_free(bot);
     processor_free(p);
-    gemini_free(gemini);
+    ocr_service_free(ocr);
+    file_repository_free(repo);
     db_backend_close(db);
     storage_backend_close(storage);
     TEST_PASS();

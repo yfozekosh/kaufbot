@@ -176,6 +176,32 @@ int config_load(Config *cfg) {
     if (config_load_database(cfg) != 0)
         return -1;
 
+    /* Telegram API configuration */
+    snprintf(cfg->telegram_api_base, MAX_URL_LEN, "%s",
+             env_or_default("TELEGRAM_API_BASE", "https://api.telegram.org/bot"));
+    snprintf(cfg->telegram_file_base, MAX_URL_LEN, "%s",
+             env_or_default("TELEGRAM_FILE_BASE", "https://api.telegram.org/file/bot"));
+    cfg->telegram_poll_timeout_secs =
+        strtol(env_or_default("TELEGRAM_POLL_TIMEOUT", "30"), NULL, 10);
+    cfg->telegram_http_timeout_secs =
+        strtol(env_or_default("TELEGRAM_HTTP_TIMEOUT", "60"), NULL, 10);
+    cfg->telegram_download_timeout_secs =
+        strtol(env_or_default("TELEGRAM_DOWNLOAD_TIMEOUT", "120"), NULL, 10);
+    cfg->telegram_reconnect_delay_secs =
+        strtol(env_or_default("TELEGRAM_RECONNECT_DELAY", "5"), NULL, 10);
+    cfg->telegram_retry_delay_secs = strtol(env_or_default("TELEGRAM_RETRY_DELAY", "2"), NULL, 10);
+
+    const char *max_file_mb = env_or_default("MAX_FILE_MB", "20");
+    cfg->max_file_size_bytes = (size_t)(strtol(max_file_mb, NULL, 10) * 1024 * 1024);
+
+    /* Gemini API configuration */
+    snprintf(cfg->gemini_api_base, GEMINI_URL_BUF_LEN, "%s",
+             env_or_default("GEMINI_API_BASE",
+                            "https://generativelanguage.googleapis.com/v1beta/models"));
+    cfg->gemini_http_timeout_secs = strtol(env_or_default("GEMINI_HTTP_TIMEOUT", "600"), NULL, 10);
+    cfg->gemini_connect_timeout_secs =
+        strtol(env_or_default("GEMINI_CONNECT_TIMEOUT", "15"), NULL, 10);
+
     LOG_INFO("configuration loaded successfully");
     return 0;
 }

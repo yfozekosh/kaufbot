@@ -12,8 +12,6 @@
 
 #define GEMINI_API_BASE          "https://generativelanguage.googleapis.com/v1beta/models"
 #define GEMINI_MAX_API_KEY_LEN   256
-#define GEMINI_MAX_MODEL_LEN     128
-#define GEMINI_URL_BUF_LEN       512
 #define GEMINI_HTTP_TIMEOUT_SECS 600L
 #define GEMINI_FALLBACK_MODEL    "gemma-3-27b-it"
 
@@ -21,6 +19,8 @@ struct GeminiClient {
     char api_key[GEMINI_MAX_API_KEY_LEN];
     char model[GEMINI_MAX_MODEL_LEN];
     char fallback_model[GEMINI_MAX_MODEL_LEN];
+    char api_base[GEMINI_URL_BUF_LEN];
+    long http_timeout_secs;
     int fallback_enabled;
     time_t fallback_until;
 };
@@ -183,7 +183,7 @@ static const char *parse_prompt(void) {
 /* ── public API ───────────────────────────────────────────────────────────── */
 
 GeminiClient *gemini_new(const char *api_key, const char *model, const char *fallback_model,
-                         int fallback_enabled) {
+                         int fallback_enabled, const char *api_base, long timeout_secs) {
     if (!api_key || !model)
         return NULL;
 
@@ -194,6 +194,8 @@ GeminiClient *gemini_new(const char *api_key, const char *model, const char *fal
     snprintf(c->model, GEMINI_MAX_MODEL_LEN, "%s", model);
     snprintf(c->fallback_model, GEMINI_MAX_MODEL_LEN, "%s",
              fallback_model ? fallback_model : GEMINI_FALLBACK_MODEL);
+    snprintf(c->api_base, GEMINI_URL_BUF_LEN, "%s", api_base ? api_base : GEMINI_API_BASE);
+    c->http_timeout_secs = (timeout_secs > 0) ? timeout_secs : GEMINI_HTTP_TIMEOUT_SECS;
     c->fallback_enabled = fallback_enabled;
     c->fallback_until = 0;
     return c;
@@ -229,8 +231,8 @@ retry:
     const char *active_model =
         (client->fallback_until != 0) ? client->fallback_model : client->model;
 
-    char url[GEMINI_URL_BUF_LEN];
-    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s", GEMINI_API_BASE, active_model,
+    char url[2048];
+    snprintf(url, sizeof(url), "%s/%s:generateContent?key=%s", client->api_base, active_model,
              client->api_key);
     LOG_DEBUG("sending request to Gemini API (model: %s)", active_model);
 
