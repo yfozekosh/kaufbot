@@ -50,7 +50,8 @@ static void log_response(const HttpResponse *resp) {
         LOG_INFO("HTTP %ld - %ldms (body: %zu bytes)", (long)resp->status_code, resp->total_time_ms,
                  resp->body_len);
     } else {
-        LOG_ERROR("HTTP request failed: %s (status: %ld)", resp->error, (long)resp->status_code);
+        LOG_ERROR("HTTP request failed: %s (status: %ld) response: %.500s", resp->error,
+                  (long)resp->status_code, resp->body ? resp->body : "(empty)");
     }
 }
 

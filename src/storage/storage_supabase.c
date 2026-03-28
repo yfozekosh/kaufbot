@@ -102,7 +102,8 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     int rc = http_client_upload(http, url, auth_headers, data, len, &resp);
 
     if (rc != 0 || !resp.success) {
-        LOG_ERROR("upload failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
+        LOG_ERROR("upload failed: %s (HTTP %ld) body: %.500s", resp.error, (long)resp.status_code,
+                  resp.body ? resp.body : "(empty)");
         http_response_free(&resp);
         http_headers_free(auth_headers);
         http_client_free(http);
