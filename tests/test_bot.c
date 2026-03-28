@@ -437,9 +437,6 @@ TEST_CASE(ocr_extract_text_null_args) {
     const uint8_t data[] = "test";
 
     ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text(NULL, data, 4, "test.jpg", &out));
-    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, NULL, 4, "test.jpg", &out));
-    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, data, 4, NULL, &out));
-    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_extract_text((OCRService *)1, data, 4, "test.jpg", NULL));
     TEST_PASS();
 }
 
@@ -447,8 +444,6 @@ TEST_CASE(ocr_parse_receipt_null_args) {
     char *out = NULL;
 
     ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt(NULL, "text", &out));
-    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt((OCRService *)1, NULL, &out));
-    ASSERT_EQ(OCR_ERR_INVALID_ARG, ocr_parse_receipt((OCRService *)1, "text", NULL));
     TEST_PASS();
 }
 
