@@ -44,8 +44,8 @@ static void list_cb(const FileRecord *rec, void *ud) {
         return;
 
     int written =
-        snprintf(c->buf + c->pos, (size_t)remaining, "%d. %s\n   %s | %lld bytes | OCR: %s\n\n",
-                 c->count + 1, rec->saved_file_name, rec->original_file_name,
+        snprintf(c->buf + c->pos, (size_t)remaining, "#%lld - %s\n   %s | %lld bytes | %s\n\n",
+                 (long long)rec->id, rec->saved_file_name, rec->original_file_name,
                  (long long)rec->file_size_bytes, rec->is_ocr_processed ? "done" : "pending");
 
     if (written > 0 && written < remaining) {

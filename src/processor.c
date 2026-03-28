@@ -19,13 +19,14 @@ struct Processor {
 int strategy_notify_and_skip(const FileRecord *existing, char *reply_buf, size_t buf_len) {
     LOG_INFO("duplicate detected: %s", existing->saved_file_name);
     snprintf(reply_buf, buf_len,
-             "\xF0\x9F\x94\x84 *Duplicate detected!*\n\n"
-             "\xF0\x9F\x93\x84 File: `%s`\n"
-             "\xF0\x9F\x95\x90 Uploaded: `%s`\n"
-             "\xE2\x9C\x85 OCR: `%s`\n\n"
-             "\xF0\x9F\x94\x8D This file was already uploaded.",
+             "Duplicate detected\n\n"
+             "File: %s\n"
+             "Uploaded: %s\n"
+             "OCR: %s\n"
+             "ID: %lld\n\n"
+             "This file was already uploaded.",
              existing->saved_file_name, existing->created_at,
-             existing->is_ocr_processed ? "done" : "not processed");
+             existing->is_ocr_processed ? "done" : "pending", (long long)existing->id);
     return 0;
 }
 

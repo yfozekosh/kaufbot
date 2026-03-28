@@ -234,7 +234,7 @@ TEST_CASE(strategy_notify_and_skip_not_processed) {
     char buf[512];
     int result = strategy_notify_and_skip(&rec, buf, sizeof(buf));
     ASSERT_EQ(0, result);
-    ASSERT_TRUE(strstr(buf, "not processed") != NULL);
+    ASSERT_TRUE(strstr(buf, "pending") != NULL);
     TEST_PASS();
 }
 
