@@ -16,6 +16,9 @@ GeminiClient *gemini_new(const char *api_key, const char *model, const char *fal
 /* Free the client. */
 void gemini_free(GeminiClient *client);
 
+/* Get total tokens used in the last API call */
+int gemini_last_tokens(const GeminiClient *client);
+
 /* Send filedata (image or PDF bytes) to Gemini for OCR / text extraction.
  * filename is used to determine MIME type.
  *

@@ -44,7 +44,7 @@ int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *mo
 /* Build reply from parsed JSON - exposed for testing */
 void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
                               const char *ocr_filename, const char *original_name, size_t data_len,
-                              cJSON *json);
+                              cJSON *json, int tokens);
 #endif
 
 #endif /* PROCESSOR_H */

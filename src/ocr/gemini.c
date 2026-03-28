@@ -23,6 +23,9 @@ struct GeminiClient {
     long http_timeout_secs;
     int fallback_enabled;
     time_t fallback_until;
+    int last_prompt_tokens;
+    int last_completion_tokens;
+    int last_total_tokens;
 };
 
 char *strip_markdown_json(char *raw) {
@@ -144,10 +147,21 @@ static const char *parse_prompt(void) {
            "Household, Groceries) and a more specific sub_category.\n\n"
            "Amounts and Units: If an amount isn't explicitly stated, default to 1. Extract "
            "the unit of measure (e.g., pieces, kg, g, m) from the item name if possible.\n\n"
+           "Discounts: If an item has a discount shown on the receipt (e.g., 'AKTION', "
+           "'RABATT', '-', or a negative price line), include it as the discount field with "
+           "the discount amount as a positive number. If no discount, set to null.\n\n"
+           "is_receipt: Set to true if the image appears to be a valid receipt. Set to false "
+           "if the image is not a receipt or the text is unreadable.\n\n"
+           "image_quality: Assess the OCR text quality: 'good' (clear, most text readable), "
+           "'fair' (some parts unclear), or 'poor' (most text garbled or unreadable).\n\n"
+           "reported_item_count: If the receipt explicitly states the number of items "
+           "(e.g., 'Anzahl', 'Stück', 'Menge'), report it. Otherwise null.\n\n"
            "Other Info: Group all remaining data (payment details, taxes, dates, times, "
            "terminal IDs) into the other object.\n\n"
            "Required JSON Schema:\n\n"
            "{\n"
+           "  \"is_receipt\": true,\n"
+           "  \"image_quality\": \"good|fair|poor\",\n"
            "  \"store_information\": {\n"
            "    \"name\": \"string\",\n"
            "    \"address\": \"string\"\n"
@@ -160,13 +174,14 @@ static const char *parse_prompt(void) {
            "      \"category\": \"string\",\n"
            "      \"sub_category\": \"string\",\n"
            "      \"price\": number,\n"
+           "      \"discount\": number|null,\n"
            "      \"tax_group\": \"string (if identifiable, else null)\",\n"
            "      \"amount\": number,\n"
            "      \"unit_of_measure\": \"string (e.g., pieces, m, cm, pack)\"\n"
            "    }\n"
            "  ],\n"
            "  \"total_sum\": number,\n"
-           "  \"number_of_items\": number,\n"
+           "  \"reported_item_count\": number|null,\n"
            "  \"other\": {\n"
            "    \"date\": \"string\",\n"
            "    \"time\": \"string\",\n"
@@ -203,6 +218,10 @@ GeminiClient *gemini_new(const char *api_key, const char *model, const char *fal
 
 void gemini_free(GeminiClient *client) {
     free(client);
+}
+
+int gemini_last_tokens(const GeminiClient *client) {
+    return client ? client->last_total_tokens : 0;
 }
 
 /* Return next midnight as time_t */
@@ -272,7 +291,10 @@ retry:
         return NULL;
     }
 
-    /* Log token usage from usageMetadata if present */
+    /* Log and store token usage from usageMetadata if present */
+    client->last_prompt_tokens = 0;
+    client->last_completion_tokens = 0;
+    client->last_total_tokens = 0;
     {
         cJSON *meta_json = cJSON_Parse(resp.body);
         if (meta_json) {
@@ -281,10 +303,14 @@ retry:
                 cJSON *prompt = cJSON_GetObjectItem(usage, "promptTokenCount");
                 cJSON *candidates = cJSON_GetObjectItem(usage, "candidatesTokenCount");
                 cJSON *total = cJSON_GetObjectItem(usage, "totalTokenCount");
+                client->last_prompt_tokens =
+                    (prompt && cJSON_IsNumber(prompt)) ? prompt->valueint : 0;
+                client->last_completion_tokens =
+                    (candidates && cJSON_IsNumber(candidates)) ? candidates->valueint : 0;
+                client->last_total_tokens = (total && cJSON_IsNumber(total)) ? total->valueint : 0;
                 LOG_INFO("gemini tokens — prompt: %d, candidates: %d, total: %d",
-                         (prompt && cJSON_IsNumber(prompt)) ? prompt->valueint : -1,
-                         (candidates && cJSON_IsNumber(candidates)) ? candidates->valueint : -1,
-                         (total && cJSON_IsNumber(total)) ? total->valueint : -1);
+                         client->last_prompt_tokens, client->last_completion_tokens,
+                         client->last_total_tokens);
             }
             cJSON_Delete(meta_json);
         }

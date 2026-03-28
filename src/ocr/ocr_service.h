@@ -40,6 +40,9 @@ typedef struct {
 
     /* Check if service is healthy/available */
     int (*is_healthy)(void *ctx);
+
+    /* Get total tokens used in the last API call */
+    int (*get_last_tokens)(void *ctx);
 } OCRServiceOps;
 
 struct OCRService {
@@ -87,7 +90,13 @@ static inline const char *ocr_get_model(OCRService *ocr) {
 static inline int ocr_is_healthy(OCRService *ocr) {
     if (!ocr || !ocr->ops)
         return 0;
-    return ocr->ops->is_healthy(ocr->internal);
+    return ocr->ops->is_healthy ? ocr->ops->is_healthy(ocr->internal) : 0;
+}
+
+static inline int ocr_get_last_tokens(OCRService *ocr) {
+    if (!ocr || !ocr->ops)
+        return 0;
+    return ocr->ops->get_last_tokens ? ocr->ops->get_last_tokens(ocr->internal) : 0;
 }
 
 /* ── Gemini Implementation ───────────────────────────────────────────────── */

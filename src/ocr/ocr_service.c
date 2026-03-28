@@ -84,8 +84,13 @@ static const char *gemini_ocr_get_model(void *ctx) {
 }
 
 static int gemini_ocr_is_healthy(void *ctx) {
-    /* Gemini client doesn't have a health check - assume healthy if initialized */
-    return (ctx != NULL) ? 1 : 0;
+    GeminiOCRService *service = (GeminiOCRService *)ctx;
+    return service && service->gemini;
+}
+
+static int gemini_ocr_get_last_tokens(void *ctx) {
+    GeminiOCRService *service = (GeminiOCRService *)ctx;
+    return service && service->gemini ? gemini_last_tokens(service->gemini) : 0;
 }
 
 /* ── VTable ──────────────────────────────────────────────────────────────── */
@@ -96,6 +101,7 @@ static const OCRServiceOps gemini_ocr_ops = {
     .parse_receipt = gemini_ocr_parse_receipt,
     .get_model = gemini_ocr_get_model,
     .is_healthy = gemini_ocr_is_healthy,
+    .get_last_tokens = gemini_ocr_get_last_tokens,
 };
 
 /* ── Public API ──────────────────────────────────────────────────────────── */

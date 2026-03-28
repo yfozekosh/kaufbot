@@ -57,9 +57,16 @@ void processor_free(Processor *p) {
 
 /* ── pipeline sub-steps ──────────────────────────────────────────────────── */
 
+static int diff_is_significant(double a, double b) {
+    double diff = a - b;
+    if (diff < 0)
+        diff = -diff;
+    return diff > 0.015;
+}
+
 void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
                               const char *ocr_filename, const char *original_name, size_t data_len,
-                              cJSON *json) {
+                              cJSON *json, int tokens) {
     (void)saved_name;
     (void)ocr_filename;
     (void)original_name;
@@ -68,14 +75,18 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
     cJSON *store_name = store_info ? cJSON_GetObjectItem(store_info, "name") : NULL;
     cJSON *total_sum = cJSON_GetObjectItem(json, "total_sum");
     cJSON *line_items = cJSON_GetObjectItem(json, "line_items");
+    cJSON *is_receipt = cJSON_GetObjectItem(json, "is_receipt");
+    cJSON *image_quality = cJSON_GetObjectItem(json, "image_quality");
+    cJSON *reported_count = cJSON_GetObjectItem(json, "reported_item_count");
 
     const char *name = (store_name && cJSON_IsString(store_name) && store_name->valuestring)
                            ? store_name->valuestring
                            : "Unknown";
     double parsed_total = (total_sum && cJSON_IsNumber(total_sum)) ? total_sum->valuedouble : 0;
     int item_count = (line_items && cJSON_IsArray(line_items)) ? cJSON_GetArraySize(line_items) : 0;
+    int not_receipt = (is_receipt && cJSON_IsFalse(is_receipt));
 
-    /* Calculate total from line items */
+    /* Calculate total from line items and format */
     double calculated_total = 0.0;
     char items_text[2048] = {0};
     int pos = 0;
@@ -89,6 +100,7 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
             cJSON *orig_name = cJSON_GetObjectItem(item, "original_name");
             cJSON *price = cJSON_GetObjectItem(item, "price");
             cJSON *amount = cJSON_GetObjectItem(item, "amount");
+            cJSON *discount = cJSON_GetObjectItem(item, "discount");
 
             const char *item_name =
                 (orig_name && cJSON_IsString(orig_name) && orig_name->valuestring)
@@ -96,38 +108,62 @@ void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved
                     : "Unknown";
             double item_price = (price && cJSON_IsNumber(price)) ? price->valuedouble : 0.0;
             double item_amount = (amount && cJSON_IsNumber(amount)) ? amount->valuedouble : 1.0;
-            double line_total = item_price * item_amount;
+            double item_discount =
+                (discount && cJSON_IsNumber(discount)) ? discount->valuedouble : 0.0;
+            double line_total = item_price * item_amount - item_discount;
             calculated_total += line_total;
 
             int remaining = (int)sizeof(items_text) - pos;
             if (remaining > 0) {
-                pos += snprintf(items_text + pos, (size_t)remaining,
-                                "  `%d.` %s: `%.2f EUR` x `%.2f` = `%.2f EUR`\n", i + 1, item_name,
-                                item_price, item_amount, line_total);
+                if (item_discount > 0.005) {
+                    pos += snprintf(items_text + pos, (size_t)remaining,
+                                    "  %d. %s: %.2f EUR x %.2f - %.2f = %.2f EUR\n", i + 1,
+                                    item_name, item_price, item_amount, item_discount, line_total);
+                } else {
+                    pos += snprintf(items_text + pos, (size_t)remaining,
+                                    "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n", i + 1, item_name,
+                                    item_price, item_amount, line_total);
+                }
             }
         }
     }
 
     /* Build reply */
     pos = 0;
-    pos += snprintf(reply_buf + pos, buf_len - pos,
-                    "\xE2\x9C\x85 *Receipt parsed!*\n\n"
-                    "\xF0\x9F\x8F\xAA Store: *%s*\n\n"
-                    "\xF0\x9F\x9B\x92 *Line items (%d):*\n%s\n"
-                    "\xF0\x9F\x92\xB0 Calculated total: `%.2f EUR`\n"
-                    "\xF0\x9F\x92\xB0 Parsed total: `%.2f EUR`",
-                    name, item_count, items_text, calculated_total, parsed_total);
 
-    /* Add warning if totals differ by more than 1 cent (with floating point tolerance) */
-    double diff = calculated_total - parsed_total;
-    if (diff < 0)
-        diff = -diff;
+    if (not_receipt) {
+        pos += snprintf(reply_buf + pos, buf_len - pos, "Not a receipt\n\n");
+    }
 
-    if (diff > 0.015) { /* > 1 cent with FP tolerance */
-        snprintf(reply_buf + pos, buf_len - pos,
-                 "\n\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated total (`%.2f EUR`) differs "
-                 "from parsed total (`%.2f EUR`)",
-                 calculated_total, parsed_total);
+    pos += snprintf(reply_buf + pos, buf_len - pos, "Store: %s\n\n", name);
+
+    /* Image quality */
+    if (image_quality && cJSON_IsString(image_quality)) {
+        pos +=
+            snprintf(reply_buf + pos, buf_len - pos, "Quality: %s\n", image_quality->valuestring);
+    }
+
+    /* Item count */
+    if (reported_count && cJSON_IsNumber(reported_count)) {
+        pos += snprintf(reply_buf + pos, buf_len - pos, "Items: %d (receipt says %d)\n\n",
+                        item_count, reported_count->valueint);
+    } else {
+        pos += snprintf(reply_buf + pos, buf_len - pos, "Items: %d\n\n", item_count);
+    }
+
+    /* Line items */
+    pos += snprintf(reply_buf + pos, buf_len - pos, "%s\n", items_text);
+
+    /* Totals */
+    pos += snprintf(reply_buf + pos, buf_len - pos, "Total: %.2f EUR", parsed_total);
+
+    if (diff_is_significant(calculated_total, parsed_total)) {
+        pos += snprintf(reply_buf + pos, buf_len - pos, " (calc: %.2f)", calculated_total);
+    }
+
+    /* Tokens */
+    if (tokens > 0) {
+        pos += snprintf(reply_buf + pos, buf_len - pos, "\nTokens: %d", tokens);
     }
 }
 
@@ -293,16 +329,11 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
         return;
     }
     processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
-                             original_name, data_len, json);
+                             original_name, data_len, json, ocr_get_last_tokens(p->ocr));
     cJSON_Delete(json);
-    size_t len = strlen(reply_buf);
-    if (len + 32 < reply_buf_len) {
-        snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
-                 (long long)rec.id);
-    }
+    free(ocr_text);
+    free(parsed_json);
 }
-
-/* ── retry OCR ────────────────────────────────────────────────────────────── */
 
 int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t reply_buf_len) {
     if (!p || !reply_buf || reply_buf_len == 0)
@@ -312,8 +343,7 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     FileRecord rec;
     int rc = file_repo_find_by_id(p->repo, file_id, &rec);
     if (rc != FILE_REPO_OK) {
-        snprintf(reply_buf, reply_buf_len, "\xF0\x9F\x94\xB4 File with ID `%lld` not found.",
-                 (long long)file_id);
+        snprintf(reply_buf, reply_buf_len, "File with ID %lld not found.", (long long)file_id);
         return -1;
     }
 
@@ -322,9 +352,9 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     /* Read the stored OCR text */
     if (rec.ocr_file_name[0] == '\0') {
         snprintf(reply_buf, reply_buf_len,
-                 "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
-                 "\xF0\x9F\x93\x84 File: `%s`\n"
-                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "Cannot Retry\n\n"
+                 "File: %s\n"
+                 "ID: %lld\n\n"
                  "No OCR text available. Please re-upload the file.",
                  rec.original_file_name, (long long)file_id);
         return -1;
@@ -333,9 +363,9 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     char *ocr_text = storage_backend_read_text(file_repo_get_storage(p->repo), rec.ocr_file_name);
     if (!ocr_text) {
         snprintf(reply_buf, reply_buf_len,
-                 "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
-                 "\xF0\x9F\x93\x84 File: `%s`\n"
-                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "Cannot Retry\n\n"
+                 "File: %s\n"
+                 "ID: %lld\n\n"
                  "OCR text file is missing. Please re-upload the file.",
                  rec.original_file_name, (long long)file_id);
         return -1;
@@ -348,9 +378,9 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
 
     if (rc != OCR_OK || !parsed_json) {
         snprintf(reply_buf, reply_buf_len,
-                 "\xE2\x9A\xA0\xEF\xB8\x8F *Retry: Parsing Failed*\n\n"
-                 "\xF0\x9F\x93\x84 File: `%s`\n"
-                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "Retry failed\n\n"
+                 "File: %s\n"
+                 "ID: %lld\n\n"
                  "Parsing failed again.",
                  rec.original_file_name, (long long)file_id);
         return -1;
@@ -364,24 +394,19 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     cJSON *json = cJSON_Parse(parsed_json);
     if (!json) {
         snprintf(reply_buf, reply_buf_len,
-                 "\xE2\x9A\xA0\xEF\xB8\x8F *Retry: Invalid JSON*\n\n"
-                 "\xF0\x9F\x93\x84 File: `%s`\n"
-                 "\xF0\x9F\x94\x91 ID: `%lld`",
+                 "Retry: Invalid JSON\n\n"
+                 "File: %s\n"
+                 "ID: %lld",
                  rec.original_file_name, (long long)file_id);
         free(parsed_json);
         return 0;
     }
 
     processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, rec.ocr_file_name,
-                             rec.original_file_name, (size_t)rec.file_size_bytes, json);
+                             rec.original_file_name, (size_t)rec.file_size_bytes, json,
+                             ocr_get_last_tokens(p->ocr));
     cJSON_Delete(json);
     free(parsed_json);
-
-    size_t len = strlen(reply_buf);
-    if (len + 32 < reply_buf_len) {
-        snprintf(reply_buf + len, reply_buf_len - len, "\n\n\xF0\x9F\x94\x91 ID: `%lld`",
-                 (long long)rec.id);
-    }
     return 0;
 }
 
@@ -481,7 +506,8 @@ int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *mo
     }
 
     processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
-                             rec.original_file_name, (size_t)rec.file_size_bytes, json);
+                             rec.original_file_name, (size_t)rec.file_size_bytes, json,
+                             ocr_get_last_tokens(p->ocr));
     cJSON_Delete(json);
     free(parsed_json);
 
