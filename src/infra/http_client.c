@@ -202,19 +202,18 @@ static void configure_curl(HttpClient *client, CURL *curl, const HttpRequest *re
     /* Reuse connections */
     curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 0L);
 
-    /* Verbose curl output for debugging */
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-
     /* Method-specific options */
     switch (req->method) {
     case HTTP_METHOD_POST:
     case HTTP_METHOD_PUT:
     case HTTP_METHOD_PATCH:
         if (req->body) {
+            /* POSTFIELDS must be set before POSTFIELDSIZE to avoid libcurl
+             * using strlen on binary data before the size is known */
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body);
             if (req->body_len > 0) {
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)req->body_len);
             }
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body);
         }
         break;
     case HTTP_METHOD_DELETE:
