@@ -266,30 +266,40 @@ endif()
 # ── Format ────────────────────────────────────────────────────────────────────
 find_program(CLANG_FORMAT_EXE clang-format)
 if(CLANG_FORMAT_EXE)
+    file(GLOB TEST_FORMAT_FILES ${CMAKE_SOURCE_DIR}/tests/test_*.c)
+
+    set(FORMAT_HEADERS
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot.h
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.h
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.h
+        ${CMAKE_SOURCE_DIR}/src/config.h
+        ${CMAKE_SOURCE_DIR}/src/processor.h
+        ${CMAKE_SOURCE_DIR}/src/utils.h
+        ${CMAKE_SOURCE_DIR}/src/db/db.h
+        ${CMAKE_SOURCE_DIR}/src/db/db_backend.h
+        ${CMAKE_SOURCE_DIR}/src/storage/storage.h
+        ${CMAKE_SOURCE_DIR}/src/storage/storage_backend.h
+        ${CMAKE_SOURCE_DIR}/src/ocr/gemini.h
+        ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.h
+        ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.h
+        ${CMAKE_SOURCE_DIR}/src/infra/http_client.h
+        ${CMAKE_SOURCE_DIR}/src/infra/file_repository.h
+        ${CMAKE_SOURCE_DIR}/src/infra/document_store.h
+        ${CMAKE_SOURCE_DIR}/src/infra/event_bus.h
+    )
+
+    set(FORMAT_MISC
+        ${CMAKE_SOURCE_DIR}/tests/main.c
+        ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
+        ${CMAKE_SOURCE_DIR}/tests/test_runner.h
+    )
+
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_EXE} -i
             ${SOURCES}
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot.h
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.h
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.h
-            ${CMAKE_SOURCE_DIR}/src/config.h
-            ${CMAKE_SOURCE_DIR}/src/processor.h
-            ${CMAKE_SOURCE_DIR}/src/utils.h
-            ${CMAKE_SOURCE_DIR}/src/db/db.h
-            ${CMAKE_SOURCE_DIR}/src/db/db_backend.h
-            ${CMAKE_SOURCE_DIR}/src/storage/storage.h
-            ${CMAKE_SOURCE_DIR}/src/storage/storage_backend.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/gemini.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.h
-            ${CMAKE_SOURCE_DIR}/src/infra/http_client.h
-            ${CMAKE_SOURCE_DIR}/src/infra/file_repository.h
-            ${CMAKE_SOURCE_DIR}/src/infra/document_store.h
-            ${CMAKE_SOURCE_DIR}/src/infra/event_bus.h
-            ${CMAKE_SOURCE_DIR}/tests/main.c
-            ${CMAKE_SOURCE_DIR}/tests/test_*.c
-            ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
-            ${CMAKE_SOURCE_DIR}/tests/test_runner.h
+            ${FORMAT_HEADERS}
+            ${FORMAT_MISC}
+            ${TEST_FORMAT_FILES}
         COMMENT "Formatting all source files with clang-format"
         VERBATIM
     )
@@ -297,27 +307,9 @@ if(CLANG_FORMAT_EXE)
     add_custom_target(format-check
         COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror
             ${SOURCES}
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot.h
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.h
-            ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.h
-            ${CMAKE_SOURCE_DIR}/src/config.h
-            ${CMAKE_SOURCE_DIR}/src/processor.h
-            ${CMAKE_SOURCE_DIR}/src/utils.h
-            ${CMAKE_SOURCE_DIR}/src/db/db.h
-            ${CMAKE_SOURCE_DIR}/src/db/db_backend.h
-            ${CMAKE_SOURCE_DIR}/src/storage/storage.h
-            ${CMAKE_SOURCE_DIR}/src/storage/storage_backend.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/gemini.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.h
-            ${CMAKE_SOURCE_DIR}/src/ocr/prompt_fetcher.h
-            ${CMAKE_SOURCE_DIR}/src/infra/http_client.h
-            ${CMAKE_SOURCE_DIR}/src/infra/file_repository.h
-            ${CMAKE_SOURCE_DIR}/src/infra/document_store.h
-            ${CMAKE_SOURCE_DIR}/src/infra/event_bus.h
-            ${CMAKE_SOURCE_DIR}/tests/main.c
-            ${CMAKE_SOURCE_DIR}/tests/test_*.c
-            ${CMAKE_SOURCE_DIR}/tests/test_helpers.h
-            ${CMAKE_SOURCE_DIR}/tests/test_runner.h
+            ${FORMAT_HEADERS}
+            ${FORMAT_MISC}
+            ${TEST_FORMAT_FILES}
         COMMENT "Checking formatting with clang-format"
         VERBATIM
     )
