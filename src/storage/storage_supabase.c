@@ -18,25 +18,20 @@ typedef struct {
     char base_url[MAX_URL_LEN];
     char anon_key[MAX_TOKEN_LEN];
     char bucket[MAX_PATH_LEN];
-    int is_v2_key;
 } SupabaseStorage;
 
 static HttpHeaders *build_auth_headers(const SupabaseStorage *storage) {
-    HttpHeaders *headers = http_headers_new(3);
+    HttpHeaders *headers = http_headers_new(4);
     if (!headers)
         return NULL;
 
     char hdr[MAX_TOKEN_LEN + 64];
 
-    if (storage->is_v2_key) {
-        snprintf(hdr, sizeof(hdr), "%s", storage->anon_key);
-        http_headers_add(headers, "apikey", hdr);
-    } else {
-        snprintf(hdr, sizeof(hdr), "Bearer %s", storage->anon_key);
-        http_headers_add(headers, "Authorization", hdr);
-        snprintf(hdr, sizeof(hdr), "%s", storage->anon_key);
-        http_headers_add(headers, "apikey", hdr);
-    }
+    snprintf(hdr, sizeof(hdr), "Bearer %s", storage->anon_key);
+    http_headers_add(headers, "Authorization", hdr);
+    snprintf(hdr, sizeof(hdr), "%s", storage->anon_key);
+    http_headers_add(headers, "apikey", hdr);
+
     return headers;
 }
 
@@ -53,7 +48,6 @@ static StorageBackend *supabase_open(const Config *cfg) {
     snprintf(storage->base_url, sizeof(storage->base_url), "%s", cfg->supabase_url);
     snprintf(storage->anon_key, sizeof(storage->anon_key), "%s", cfg->supabase_service_key);
     snprintf(storage->bucket, sizeof(storage->bucket), "%s", cfg->supabase_bucket);
-    storage->is_v2_key = (strncmp(cfg->supabase_service_key, "sb_", 3) == 0);
 
     StorageBackend *backend = calloc(1, sizeof(StorageBackend));
     if (!backend) {
