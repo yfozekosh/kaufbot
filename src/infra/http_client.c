@@ -92,6 +92,10 @@ HttpHeaders *http_headers_new(size_t capacity) {
 void http_headers_free(HttpHeaders *headers) {
     if (!headers)
         return;
+    for (size_t i = 0; i < headers->count; i++) {
+        free((void *)headers->headers[i].key);
+        free((void *)headers->headers[i].value);
+    }
     free(headers->headers);
     free(headers);
 }
@@ -102,8 +106,13 @@ int http_headers_add(HttpHeaders *headers, const char *key, const char *value) {
     if (headers->count >= headers->capacity)
         return -1;
 
-    headers->headers[headers->count].key = key;
-    headers->headers[headers->count].value = value;
+    headers->headers[headers->count].key = strdup(key);
+    headers->headers[headers->count].value = strdup(value);
+    if (!headers->headers[headers->count].key || !headers->headers[headers->count].value) {
+        free((void *)headers->headers[headers->count].key);
+        free((void *)headers->headers[headers->count].value);
+        return -1;
+    }
     headers->count++;
     return 0;
 }

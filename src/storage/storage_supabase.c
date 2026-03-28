@@ -47,8 +47,6 @@ static StorageBackend *supabase_open(const Config *cfg) {
     }
     snprintf(storage->base_url, sizeof(storage->base_url), "%s", cfg->supabase_url);
     snprintf(storage->anon_key, sizeof(storage->anon_key), "%s", cfg->supabase_service_key);
-    LOG_INFO("supabase using key: %.10s... (len=%zu)", storage->anon_key,
-             strlen(storage->anon_key));
     snprintf(storage->bucket, sizeof(storage->bucket), "%s", cfg->supabase_bucket);
 
     StorageBackend *backend = calloc(1, sizeof(StorageBackend));

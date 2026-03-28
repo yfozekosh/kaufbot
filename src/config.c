@@ -72,8 +72,6 @@ static int config_load_storage(Config *cfg) {
         const char *sb_svc = getenv("SUPABASE_SERVICE_KEY");
         if (sb_svc && sb_svc[0] != '\0') {
             snprintf(cfg->supabase_service_key, MAX_TOKEN_LEN, "%s", sb_svc);
-            LOG_INFO("supabase service_key loaded: %.10s... (len=%zu)", cfg->supabase_service_key,
-                     strlen(cfg->supabase_service_key));
         } else {
             LOG_WARN("SUPABASE_SERVICE_KEY not set, using anon key (RLS applies)");
             snprintf(cfg->supabase_service_key, MAX_TOKEN_LEN, "%s", sb_key);
