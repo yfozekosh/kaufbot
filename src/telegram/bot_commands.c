@@ -89,19 +89,18 @@ static int do_delete_file(const TgBot *bot, int64_t db_file_id, char *msg_buf, s
 /* Build the help text with available models */
 static void send_help(const TgBot *bot, int64_t chat_id) {
     tg_send_message(bot, chat_id,
-                    "OCR Bot\n\n"
-                    "Send me any image (JPEG, PNG, WebP, BMP, GIF, TIFF) "
-                    "or PDF document and I will:\n"
-                    "  1. Save it with a timestamped filename\n"
-                    "  2. Extract all text via Gemini OCR\n"
-                    "  3. Send you the result\n\n"
+                    "Kaufbot - Receipt Scanner\n\n"
+                    "Send me a receipt photo or PDF and I will:\n"
+                    "  1. Extract text via Gemini OCR\n"
+                    "  2. Parse items, totals, and store name\n"
+                    "  3. Save results for later\n\n"
                     "Commands:\n"
-                    "  /help         - show this message\n"
-                    "  /list         - show recently uploaded files\n"
-                    "  /delete <id>  - delete a file by its ID\n"
-                    "  /retry <id>   - retry OCR parsing for a file\n"
-                    "  /models       - list available Gemini models\n"
-                    "  /retrywith <model> <id> - re-run OCR with a specific model");
+                    "  /help              - this message\n"
+                    "  /list              - recent uploads\n"
+                    "  /delete <id>       - delete a file\n"
+                    "  /retry <id>        - re-parse OCR text\n"
+                    "  /retrywith <model> <id> - re-run OCR with a model\n"
+                    "  /models            - list available models");
 }
 
 /* Send list of available models */

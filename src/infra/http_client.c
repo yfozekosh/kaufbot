@@ -370,6 +370,21 @@ int http_client_get(HttpClient *client, const char *url, long timeout_secs,
     return http_client_execute(client, &req, response);
 }
 
+int http_client_get_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                 long timeout_secs, HttpResponse *response) {
+    if (!client || !url || !response)
+        return -1;
+
+    HttpRequest req = {
+        .method = HTTP_METHOD_GET,
+        .url = url,
+        .timeout_secs = timeout_secs,
+        .headers = headers,
+        .follow_redirects = client->config.follow_redirects,
+    };
+    return http_client_execute(client, &req, response);
+}
+
 int http_client_post(HttpClient *client, const char *url, const char *body,
                      const char *content_type, HttpResponse *response) {
     HttpRequest req = {
@@ -431,12 +446,33 @@ int http_client_delete(HttpClient *client, const char *url, HttpResponse *respon
     return http_client_execute(client, &req, response);
 }
 
+int http_client_delete_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                    HttpResponse *response) {
+    HttpRequest req = {
+        .method = HTTP_METHOD_DELETE,
+        .url = url,
+        .headers = headers,
+    };
+    return http_client_execute(client, &req, response);
+}
+
 int http_client_head(HttpClient *client, const char *url, long timeout_secs,
                      HttpResponse *response) {
     HttpRequest req = {
         .method = HTTP_METHOD_HEAD,
         .url = url,
         .timeout_secs = timeout_secs,
+    };
+    return http_client_execute(client, &req, response);
+}
+
+int http_client_head_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                  long timeout_secs, HttpResponse *response) {
+    HttpRequest req = {
+        .method = HTTP_METHOD_HEAD,
+        .url = url,
+        .timeout_secs = timeout_secs,
+        .headers = headers,
     };
     return http_client_execute(client, &req, response);
 }

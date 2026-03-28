@@ -110,6 +110,8 @@ int http_client_execute(HttpClient *client, const HttpRequest *request, HttpResp
 /* Convenience methods for common HTTP verbs.
  * Response must be freed with http_response_free(). */
 int http_client_get(HttpClient *client, const char *url, long timeout_secs, HttpResponse *response);
+int http_client_get_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                 long timeout_secs, HttpResponse *response);
 int http_client_post(HttpClient *client, const char *url, const char *body,
                      const char *content_type, HttpResponse *response);
 int http_client_post_json(HttpClient *client, const char *url, const char *json_body,
@@ -120,8 +122,12 @@ int http_client_put(HttpClient *client, const char *url, HttpHeaders *headers, c
 int http_client_upload(HttpClient *client, const char *url, HttpHeaders *headers,
                        const uint8_t *data, size_t len, HttpResponse *response);
 int http_client_delete(HttpClient *client, const char *url, HttpResponse *response);
+int http_client_delete_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                    HttpResponse *response);
 int http_client_head(HttpClient *client, const char *url, long timeout_secs,
                      HttpResponse *response);
+int http_client_head_with_headers(HttpClient *client, const char *url, HttpHeaders *headers,
+                                  long timeout_secs, HttpResponse *response);
 
 /* ── Response Management ────────────────────────────────────────────────── */
 

@@ -141,7 +141,8 @@ static int supabase_file_exists(StorageBackend *backend, const char *filename) {
     }
 
     HttpResponse resp;
-    int rc = http_client_head(http, url, SUPABASE_HTTP_HEAD_TIMEOUT_SECS, &resp);
+    int rc = http_client_head_with_headers(http, url, auth_headers, SUPABASE_HTTP_HEAD_TIMEOUT_SECS,
+                                           &resp);
 
     if (rc != 0) {
         LOG_ERROR("existence check failed: %s", resp.error);
@@ -248,7 +249,8 @@ static int supabase_check_public_access(const SupabaseStorage *storage, const ch
     }
 
     HttpResponse resp;
-    int rc = http_client_head(http, url, SUPABASE_HTTP_HEAD_TIMEOUT_SECS, &resp);
+    int rc = http_client_head_with_headers(http, url, auth_headers, SUPABASE_HTTP_HEAD_TIMEOUT_SECS,
+                                           &resp);
 
     int accessible = 0;
     if (rc == 0 && resp.success) {
@@ -281,7 +283,7 @@ static int supabase_delete_file(StorageBackend *backend, const char *filename) {
     }
 
     HttpResponse resp;
-    int rc = http_client_delete(http, url, &resp);
+    int rc = http_client_delete_with_headers(http, url, auth_headers, &resp);
 
     if (rc != 0) {
         LOG_ERROR("supabase delete failed: %s", resp.error);
@@ -342,10 +344,12 @@ static char *supabase_read_text(StorageBackend *backend, const char *filename) {
     }
 
     HttpResponse resp;
-    int rc = http_client_get(http, url, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
+    int rc =
+        http_client_get_with_headers(http, url, auth_headers, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
 
     if (rc != 0 || !resp.success) {
-        LOG_ERROR("supabase read failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
+        LOG_ERROR("supabase read failed: %s (HTTP %ld) body: %.200s", resp.error,
+                  (long)resp.status_code, resp.body ? resp.body : "(empty)");
         http_response_free(&resp);
         http_headers_free(auth_headers);
         http_client_free(http);
@@ -386,7 +390,8 @@ static uint8_t *supabase_read_binary(StorageBackend *backend, const char *filena
     }
 
     HttpResponse resp;
-    int rc = http_client_get(http, url, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
+    int rc =
+        http_client_get_with_headers(http, url, auth_headers, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
 
     if (rc != 0 || !resp.success) {
         LOG_ERROR("supabase read failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
