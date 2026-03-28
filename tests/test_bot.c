@@ -46,6 +46,11 @@ static Config make_test_config(void) {
     return cfg;
 }
 
+/* Helper: clean test DB file to avoid stale state */
+static void clean_test_db(void) {
+    unlink("/tmp/kaufbot_test_bot.db");
+}
+
 /* ── bot lifecycle tests ──────────────────────────────────────────── */
 TEST_CASE(bot_new_and_free) {
     Config cfg = make_test_config();
@@ -491,13 +496,18 @@ TEST_CASE(processor_retry_ocr_with_model_null_args) {
 
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
+    ASSERT_NOT_NULL(db);
     StorageBackend *storage = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(storage);
     storage_backend_ensure_dirs(storage);
     FileRepository *repo = file_repository_db_backend(db, storage);
+    ASSERT_NOT_NULL(repo);
     OCRService *ocr =
         ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
                                cfg.gemini_fallback_enabled, NULL, 0);
+    ASSERT_NOT_NULL(ocr);
     Processor *p = processor_new(repo, storage, ocr, NULL);
+    ASSERT_NOT_NULL(p);
 
     ASSERT_EQ(-1, processor_retry_ocr_with_model(p, 1, NULL, reply, sizeof(reply)));
     ASSERT_EQ(-1, processor_retry_ocr_with_model(p, 1, "model", NULL, sizeof(reply)));
@@ -514,14 +524,21 @@ TEST_CASE(processor_retry_ocr_with_model_null_args) {
 /* ── processor_retry_ocr_with_model not found ─────────────────────────── */
 
 TEST_CASE(processor_retry_ocr_with_model_not_found) {
+    clean_test_db();
     Config cfg = make_test_config();
     DBBackend *db = db_backend_open(&cfg);
+    ASSERT_NOT_NULL(db);
     StorageBackend *storage = storage_backend_open(&cfg);
+    ASSERT_NOT_NULL(storage);
+    storage_backend_ensure_dirs(storage);
     FileRepository *repo = file_repository_db_backend(db, storage);
+    ASSERT_NOT_NULL(repo);
     OCRService *ocr =
         ocr_service_gemini_new(cfg.gemini_api_key, cfg.gemini_model, cfg.gemini_fallback_model,
                                cfg.gemini_fallback_enabled, NULL, 0);
+    ASSERT_NOT_NULL(ocr);
     Processor *p = processor_new(repo, storage, ocr, NULL);
+    ASSERT_NOT_NULL(p);
 
     char reply[512];
     int rc = processor_retry_ocr_with_model(p, 9999, "gemini-2.5-flash", reply, sizeof(reply));

@@ -387,13 +387,14 @@ int http_client_post_json(HttpClient *client, const char *url, const char *json_
     return http_client_post(client, url, json_body, "application/json", response);
 }
 
-int http_client_put(HttpClient *client, const char *url, const uint8_t *data, size_t len,
-                    HttpResponse *response) {
+int http_client_put(HttpClient *client, const char *url, HttpHeaders *headers, const uint8_t *data,
+                    size_t len, HttpResponse *response) {
     HttpRequest req = {
         .method = HTTP_METHOD_PUT,
         .url = url,
         .body = (const char *)data,
         .body_len = len,
+        .headers = headers,
     };
     return http_client_execute(client, &req, response);
 }
