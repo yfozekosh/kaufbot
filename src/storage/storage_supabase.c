@@ -99,7 +99,7 @@ static int supabase_save_file(StorageBackend *backend, const char *filename, con
     http_headers_add(auth_headers, "x-upsert", "true");
 
     HttpResponse resp;
-    int rc = http_client_put(http, url, auth_headers, data, len, &resp);
+    int rc = http_client_upload(http, url, auth_headers, data, len, &resp);
 
     if (rc != 0 || !resp.success) {
         LOG_ERROR("upload failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);

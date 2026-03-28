@@ -399,6 +399,18 @@ int http_client_put(HttpClient *client, const char *url, HttpHeaders *headers, c
     return http_client_execute(client, &req, response);
 }
 
+int http_client_upload(HttpClient *client, const char *url, HttpHeaders *headers,
+                       const uint8_t *data, size_t len, HttpResponse *response) {
+    HttpRequest req = {
+        .method = HTTP_METHOD_POST,
+        .url = url,
+        .body = (const char *)data,
+        .body_len = len,
+        .headers = headers,
+    };
+    return http_client_execute(client, &req, response);
+}
+
 int http_client_delete(HttpClient *client, const char *url, HttpResponse *response) {
     HttpRequest req = {
         .method = HTTP_METHOD_DELETE,

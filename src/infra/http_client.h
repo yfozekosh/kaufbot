@@ -116,6 +116,9 @@ int http_client_post_json(HttpClient *client, const char *url, const char *json_
                           HttpResponse *response);
 int http_client_put(HttpClient *client, const char *url, HttpHeaders *headers, const uint8_t *data,
                     size_t len, HttpResponse *response);
+/* POST with binary body and custom headers (for file uploads) */
+int http_client_upload(HttpClient *client, const char *url, HttpHeaders *headers,
+                       const uint8_t *data, size_t len, HttpResponse *response);
 int http_client_delete(HttpClient *client, const char *url, HttpResponse *response);
 int http_client_head(HttpClient *client, const char *url, long timeout_secs,
                      HttpResponse *response);
