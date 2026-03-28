@@ -202,6 +202,9 @@ static void configure_curl(HttpClient *client, CURL *curl, const HttpRequest *re
     /* Reuse connections */
     curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 0L);
 
+    /* Verbose curl output for debugging */
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+
     /* Method-specific options */
     switch (req->method) {
     case HTTP_METHOD_POST:
