@@ -31,6 +31,11 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
 /* Re-run OCR parsing for an existing file. Returns 0 on success. */
 int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t reply_buf_len);
 
+/* Re-run OCR with a specific model, re-extracting text from the original file.
+ * Returns 0 on success. */
+int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *model,
+                                   char *reply_buf, size_t reply_buf_len);
+
 /* ── Test helpers ─────────────────────────────────────────────────────────── */
 
 #ifdef TEST_BUILD

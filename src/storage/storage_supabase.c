@@ -368,6 +368,51 @@ static char *supabase_read_text(StorageBackend *backend, const char *filename) {
     return text;
 }
 
+static uint8_t *supabase_read_binary(StorageBackend *backend, const char *filename,
+                                     size_t *out_len) {
+    SupabaseStorage *storage = (SupabaseStorage *)backend->internal;
+    LOG_DEBUG("reading binary from Supabase: %s/%s", storage->bucket, filename);
+
+    char url[MAX_COMPOSED_URL];
+    snprintf(url, sizeof(url), "%s/storage/v1/object/%s/%s", storage->base_url, storage->bucket,
+             filename);
+
+    HttpClient *http = http_client_new();
+    if (!http) {
+        *out_len = 0;
+        return NULL;
+    }
+
+    HttpHeaders *auth_headers = build_auth_headers(storage);
+    if (!auth_headers) {
+        http_client_free(http);
+        *out_len = 0;
+        return NULL;
+    }
+
+    HttpResponse resp;
+    int rc = http_client_get(http, url, SUPABASE_HTTP_TIMEOUT_SECS, &resp);
+
+    if (rc != 0 || !resp.success) {
+        LOG_ERROR("supabase read failed: %s (HTTP %ld)", resp.error, (long)resp.status_code);
+        http_response_free(&resp);
+        http_headers_free(auth_headers);
+        http_client_free(http);
+        *out_len = 0;
+        return NULL;
+    }
+
+    http_headers_free(auth_headers);
+    http_client_free(http);
+
+    *out_len = resp.body_len;
+    uint8_t *data = (uint8_t *)resp.body;
+    resp.body = NULL;
+    http_response_free(&resp);
+
+    return data;
+}
+
 /* ── backend ops ──────────────────────────────────────────────────────────── */
 
 static const StorageBackendOps supabase_ops = {.open = supabase_open,
@@ -376,6 +421,7 @@ static const StorageBackendOps supabase_ops = {.open = supabase_open,
                                                .save_file = supabase_save_file,
                                                .save_text = supabase_save_text,
                                                .read_text = supabase_read_text,
+                                               .read_binary = supabase_read_binary,
                                                .file_exists = supabase_file_exists,
                                                .delete_file = supabase_delete_file,
                                                .get_public_url = supabase_get_public_url};

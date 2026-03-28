@@ -296,3 +296,102 @@ TEST_CASE(config_custom_gemini_model) {
     unset_env("GEMINI_MODEL");
     TEST_PASS();
 }
+
+/* ── GEMINI_MODELS parsing ─────────────────────────────────────────────── */
+
+static void set_env_required(void) {
+    set_env("TELEGRAM_TOKEN", "test_token");
+    set_env("GEMINI_API_KEY", "test_key");
+    set_env("ALLOWED_USER_IDS", "12345");
+}
+
+TEST_CASE(config_models_default) {
+    set_env_required();
+    unset_env("GEMINI_MODELS");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(4, cfg.gemini_model_count);
+    ASSERT_STR_EQ("gemma-3-12b-it", cfg.gemini_models[0]);
+    ASSERT_STR_EQ("gemma-3-27b-it", cfg.gemini_models[1]);
+    ASSERT_STR_EQ("gemini-2.0-flash", cfg.gemini_models[2]);
+    ASSERT_STR_EQ("gemini-2.5-flash", cfg.gemini_models[3]);
+
+    unset_env("TELEGRAM_TOKEN");
+    unset_env("GEMINI_API_KEY");
+    unset_env("ALLOWED_USER_IDS");
+    TEST_PASS();
+}
+
+TEST_CASE(config_models_custom_csv) {
+    set_env_required();
+    set_env("GEMINI_MODELS", "model-a,model-b,model-c");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(3, cfg.gemini_model_count);
+    ASSERT_STR_EQ("model-a", cfg.gemini_models[0]);
+    ASSERT_STR_EQ("model-b", cfg.gemini_models[1]);
+    ASSERT_STR_EQ("model-c", cfg.gemini_models[2]);
+
+    unset_env("GEMINI_MODELS");
+    unset_env("TELEGRAM_TOKEN");
+    unset_env("GEMINI_API_KEY");
+    unset_env("ALLOWED_USER_IDS");
+    TEST_PASS();
+}
+
+TEST_CASE(config_models_single) {
+    set_env_required();
+    set_env("GEMINI_MODELS", "only-one-model");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(1, cfg.gemini_model_count);
+    ASSERT_STR_EQ("only-one-model", cfg.gemini_models[0]);
+
+    unset_env("GEMINI_MODELS");
+    unset_env("TELEGRAM_TOKEN");
+    unset_env("GEMINI_API_KEY");
+    unset_env("ALLOWED_USER_IDS");
+    TEST_PASS();
+}
+
+TEST_CASE(config_models_with_spaces) {
+    set_env_required();
+    set_env("GEMINI_MODELS", " model-a , model-b , model-c ");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    ASSERT_EQ(3, cfg.gemini_model_count);
+    ASSERT_STR_EQ("model-a", cfg.gemini_models[0]);
+    ASSERT_STR_EQ("model-b", cfg.gemini_models[1]);
+    ASSERT_STR_EQ("model-c", cfg.gemini_models[2]);
+
+    unset_env("GEMINI_MODELS");
+    unset_env("TELEGRAM_TOKEN");
+    unset_env("GEMINI_API_KEY");
+    unset_env("ALLOWED_USER_IDS");
+    TEST_PASS();
+}
+
+TEST_CASE(config_models_empty_csv) {
+    set_env_required();
+    set_env("GEMINI_MODELS", "");
+
+    Config cfg;
+    int result = config_load(&cfg);
+    ASSERT_EQ(0, result);
+    /* Empty CSV falls back to default model */
+    ASSERT_TRUE(cfg.gemini_model_count >= 1);
+
+    unset_env("GEMINI_MODELS");
+    unset_env("TELEGRAM_TOKEN");
+    unset_env("GEMINI_API_KEY");
+    unset_env("ALLOWED_USER_IDS");
+    TEST_PASS();
+}

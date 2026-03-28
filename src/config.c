@@ -202,6 +202,37 @@ int config_load(Config *cfg) {
     cfg->gemini_connect_timeout_secs =
         strtol(env_or_default("GEMINI_CONNECT_TIMEOUT", "15"), NULL, 10);
 
+    /* Parse available Gemini models from CSV env var */
+    const char *models_csv = env_or_default(
+        "GEMINI_MODELS", "gemma-3-12b-it,gemma-3-27b-it,gemini-2.0-flash,gemini-2.5-flash");
+    cfg->gemini_model_count = 0;
+    {
+        char buf[GEMINI_MODELS_BUF];
+        snprintf(buf, sizeof(buf), "%s", models_csv);
+        char *saveptr = NULL;
+        char *tok = strtok_r(buf, ",", &saveptr);
+        while (tok && cfg->gemini_model_count < MAX_GEMINI_MODELS) {
+            /* Trim leading whitespace */
+            while (*tok == ' ' || *tok == '\t')
+                tok++;
+            /* Trim trailing whitespace */
+            size_t len = strlen(tok);
+            while (len > 0 && (tok[len - 1] == ' ' || tok[len - 1] == '\t'))
+                tok[--len] = '\0';
+            if (len > 0) {
+                snprintf(cfg->gemini_models[cfg->gemini_model_count], GEMINI_MAX_MODEL_LEN, "%s",
+                         tok);
+                cfg->gemini_model_count++;
+            }
+            tok = strtok_r(NULL, ",", &saveptr);
+        }
+    }
+    if (cfg->gemini_model_count == 0) {
+        LOG_WARN("no Gemini models configured, using default");
+        snprintf(cfg->gemini_models[0], GEMINI_MAX_MODEL_LEN, "%s", cfg->gemini_model);
+        cfg->gemini_model_count = 1;
+    }
+
     LOG_INFO("configuration loaded successfully");
     return 0;
 }

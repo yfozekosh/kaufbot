@@ -43,6 +43,8 @@
 #define MAX_URL_LEN          1024
 #define GEMINI_URL_BUF_LEN   1024
 #define GEMINI_MAX_MODEL_LEN 128
+#define MAX_GEMINI_MODELS    8
+#define GEMINI_MODELS_BUF    512
 
 /* ── Backend types ────────────────────────────────────────────────────────── */
 
@@ -92,6 +94,10 @@ typedef struct {
     char gemini_api_base[GEMINI_URL_BUF_LEN];
     long gemini_http_timeout_secs;
     long gemini_connect_timeout_secs;
+
+    /* Available Gemini models (parsed from GEMINI_MODELS CSV env var) */
+    char gemini_models[MAX_GEMINI_MODELS][GEMINI_MAX_MODEL_LEN];
+    int gemini_model_count;
 } Config;
 
 /* Load config from environment variables.

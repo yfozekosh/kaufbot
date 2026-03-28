@@ -366,6 +366,25 @@ char *gemini_extract_text(GeminiClient *client, const uint8_t *data, size_t len,
     return result;
 }
 
+char *gemini_extract_text_with_model(GeminiClient *client, const uint8_t *data, size_t len,
+                                     const char *filename, const char *model) {
+    if (!client || !model)
+        return gemini_extract_text(client, data, len, filename);
+
+    LOG_INFO("extracting text from: %s (%zu bytes) with model: %s", filename, len, model);
+
+    /* Temporarily swap the active model */
+    char saved[GEMINI_MAX_MODEL_LEN];
+    snprintf(saved, sizeof(saved), "%s", client->model);
+    snprintf(client->model, GEMINI_MAX_MODEL_LEN, "%s", model);
+
+    char *result = gemini_extract_text(client, data, len, filename);
+
+    /* Restore original model */
+    snprintf(client->model, GEMINI_MAX_MODEL_LEN, "%s", saved);
+    return result;
+}
+
 char *gemini_parse_receipt(GeminiClient *client, const char *ocr_text) {
     LOG_INFO("parsing receipt text (%zu chars)", strlen(ocr_text));
 

@@ -314,6 +314,41 @@ static char *local_read_text(StorageBackend *backend, const char *filename) {
     return buf;
 }
 
+static uint8_t *local_read_binary(StorageBackend *backend, const char *filename, size_t *out_len) {
+    LocalStorage *storage = (LocalStorage *)backend->internal;
+    char full_path[MAX_PATH_LEN * 2];
+    snprintf(full_path, sizeof(full_path), "%s/%s", storage->base_path, filename);
+
+    FILE *f = fopen(full_path, "rb");
+    if (!f) {
+        LOG_ERROR("cannot open %s: %s", full_path, strerror(errno));
+        *out_len = 0;
+        return NULL;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0) {
+        fclose(f);
+        *out_len = 0;
+        return NULL;
+    }
+
+    uint8_t *buf = malloc((size_t)size);
+    if (!buf) {
+        fclose(f);
+        *out_len = 0;
+        return NULL;
+    }
+
+    size_t nread = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    *out_len = nread;
+    return buf;
+}
+
 static char *local_get_public_url(StorageBackend *backend, const char *filename) {
     (void)backend;
     (void)filename;
@@ -369,7 +404,8 @@ static const StorageBackendOps local_ops = {.open = local_open,
                                             .file_exists = local_file_exists,
                                             .delete_file = local_delete_file,
                                             .get_public_url = local_get_public_url,
-                                            .read_text = local_read_text};
+                                            .read_text = local_read_text,
+                                            .read_binary = local_read_binary};
 
 StorageBackend *storage_backend_local_open(const Config *cfg) {
     return local_ops.open(cfg);

@@ -12,25 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Access TgBot internals — bot.c exposes these fields via bot.h include */
-/* We need the struct definition; bot.c will include bot_commands.h after defining TgBot.
- * To avoid circular dependency, bot_commands.h uses forward decl only.
- * We duplicate the struct access via an opaque pointer and accessor functions
- * provided by bot.c. However, for simplicity, we #include bot_internal.h. */
-
-/* Instead, we access the struct via the full definition which bot.h already provides
- * indirectly through processor.h and db_backend.h. We declare the struct here
- * but bot.c owns the canonical definition. To break the circular dependency,
- * we re-declare just the fields we need as a local struct and cast.
- * Actually, the simplest approach: bot.h declares TgBot as opaque, and we add
- * accessor functions in bot.c. But that's over-engineered for now.
- *
- * Simplest correct approach: bot.h includes the struct definition (it already does
- * indirectly). We just use it. */
-
-#include "bot.h" /* Pulls in processor.h → file_repository.h → storage_backend.h */
-
-/* Constants used by command handling */
+/* Constants */
 #define MAX_LIST_ENTRIES 10
 #define MAX_REPLY_LEN    4096
 #define TG_CMD_START     "/start"
@@ -38,6 +20,8 @@
 #define TG_CMD_LIST      "/list"
 #define TG_CMD_DELETE    "/delete"
 #define TG_CMD_RETRY     "/retry"
+#define TG_CMD_RETRYWITH "/retrywith"
+#define TG_CMD_MODELS    "/models"
 
 /* ── helper types ─────────────────────────────────────────────────────────── */
 
@@ -86,13 +70,11 @@ static int do_delete_file(const TgBot *bot, int64_t db_file_id, char *msg_buf, s
         return -1;
     }
 
-    /* Delete storage files (best-effort) */
     if (bot->storage && rec.saved_file_name[0] != '\0')
         storage_backend_delete_file(bot->storage, rec.saved_file_name);
     if (bot->storage && rec.ocr_file_name[0] != '\0')
         storage_backend_delete_file(bot->storage, rec.ocr_file_name);
 
-    /* Delete from DB (CASCADE will delete parsed_receipts) */
     int rc = db_backend_delete_file(bot->db, db_file_id);
     if (rc != 0) {
         snprintf(msg_buf, msg_len, "Failed to delete file %lld.", (long long)db_file_id);
@@ -104,22 +86,57 @@ static int do_delete_file(const TgBot *bot, int64_t db_file_id, char *msg_buf, s
     return 0;
 }
 
+/* Build the help text with available models */
+static void send_help(const TgBot *bot, int64_t chat_id) {
+    tg_send_message(bot, chat_id,
+                    "OCR Bot\n\n"
+                    "Send me any image (JPEG, PNG, WebP, BMP, GIF, TIFF) "
+                    "or PDF document and I will:\n"
+                    "  1. Save it with a timestamped filename\n"
+                    "  2. Extract all text via Gemini OCR\n"
+                    "  3. Send you the result\n\n"
+                    "Commands:\n"
+                    "  /help         - show this message\n"
+                    "  /list         - show recently uploaded files\n"
+                    "  /delete <id>  - delete a file by its ID\n"
+                    "  /retry <id>   - retry OCR parsing for a file\n"
+                    "  /models       - list available Gemini models\n"
+                    "  /retrywith <model> <id> - re-run OCR with a specific model");
+}
+
+/* Send list of available models */
+static void send_models(const TgBot *bot, int64_t chat_id) {
+    char reply[MAX_REPLY_LEN];
+    int pos = 0;
+
+    pos += snprintf(reply + pos, sizeof(reply) - pos, "Available Gemini models:\n\n");
+
+    for (int i = 0; i < bot->cfg->gemini_model_count; i++) {
+        int remaining = (int)sizeof(reply) - pos;
+        if (remaining <= 0)
+            break;
+        pos += snprintf(reply + pos, (size_t)remaining, "  %d. `%s`\n", i + 1,
+                        bot->cfg->gemini_models[i]);
+    }
+
+    snprintf(reply + pos, sizeof(reply) - pos,
+             "\nUse: /retrywith <model> <id>\n"
+             "Example: /retrywith %s <id>",
+             bot->cfg->gemini_model_count > 0 ? bot->cfg->gemini_models[0] : "gemini-2.5-flash");
+
+    tg_send_message(bot, chat_id, reply);
+}
+
 /* ── command handler ──────────────────────────────────────────────────────── */
 
 static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
     if (str_starts_with(text, TG_CMD_START) || str_starts_with(text, TG_CMD_HELP)) {
-        tg_send_message(bot, chat_id,
-                        "OCR Bot\n\n"
-                        "Send me any image (JPEG, PNG, WebP, BMP, GIF, TIFF) "
-                        "or PDF document and I will:\n"
-                        "  1. Save it with a timestamped filename\n"
-                        "  2. Extract all text via Gemini OCR\n"
-                        "  3. Send you the result\n\n"
-                        "Commands:\n"
-                        "  /help      - show this message\n"
-                        "  /list      - show recently uploaded files\n"
-                        "  /delete ID - delete a file by its ID\n"
-                        "  /retry ID  - retry OCR parsing for a file");
+        send_help(bot, chat_id);
+        return;
+    }
+
+    if (str_starts_with(text, TG_CMD_MODELS)) {
+        send_models(bot, chat_id);
         return;
     }
 
@@ -158,6 +175,58 @@ static void handle_command(TgBot *bot, int64_t chat_id, const char *text) {
         return;
     }
 
+    /* /retrywith <model> <id> */
+    if (str_starts_with(text, TG_CMD_RETRYWITH)) {
+        const char *arg = text + strlen(TG_CMD_RETRYWITH);
+        while (*arg == ' ')
+            arg++;
+
+        if (*arg == '\0') {
+            tg_send_message(bot, chat_id,
+                            "Usage: /retrywith <model> <id>\n"
+                            "Use /models to list available models.");
+            return;
+        }
+
+        /* Parse model name (everything until space) */
+        char model[GEMINI_MAX_MODEL_LEN];
+        const char *model_end = strchr(arg, ' ');
+        if (!model_end || model_end == arg) {
+            tg_send_message(bot, chat_id,
+                            "Usage: /retrywith <model> <id>\n"
+                            "Example: /retrywith gemini-2.5-flash 42");
+            return;
+        }
+        size_t model_len = (size_t)(model_end - arg);
+        if (model_len >= sizeof(model))
+            model_len = sizeof(model) - 1;
+        memcpy(model, arg, model_len);
+        model[model_len] = '\0';
+
+        /* Parse ID */
+        const char *id_str = model_end;
+        while (*id_str == ' ')
+            id_str++;
+
+        char *end;
+        long long id = strtoll(id_str, &end, 10);
+        if (end == id_str || *end != '\0') {
+            tg_send_message(bot, chat_id, "Invalid ID. Usage: /retrywith <model> <id>");
+            return;
+        }
+
+        char reply[MAX_REPLY_LEN];
+        int rc = processor_retry_ocr_with_model(bot->processor, (int64_t)id, model, reply,
+                                                sizeof(reply));
+        if (rc == 0) {
+            tg_send_message_with_keyboard(bot, chat_id, reply, (int64_t)id);
+        } else {
+            tg_send_message(bot, chat_id, reply);
+        }
+        return;
+    }
+
+    /* /retry <id> */
     if (str_starts_with(text, TG_CMD_RETRY)) {
         const char *arg = text + strlen(TG_CMD_RETRY);
         while (*arg == ' ')
@@ -355,6 +424,40 @@ void bot_dispatch_update(TgBot *bot, cJSON *update) {
                     tg_send_message(bot, retry_chat_id, reply);
                 }
             }
+        } else if (strncmp(data, "rwm:", 4) == 0) {
+            /* retry with model: "rwm:<model>:<file_id>" */
+            const char *rest = data + 4;
+            const char *colon = strchr(rest, ':');
+            if (colon) {
+                char model[GEMINI_MAX_MODEL_LEN];
+                size_t mlen = (size_t)(colon - rest);
+                if (mlen >= sizeof(model))
+                    mlen = sizeof(model) - 1;
+                memcpy(model, rest, mlen);
+                model[mlen] = '\0';
+
+                long long file_id = strtoll(colon + 1, NULL, 10);
+
+                cJSON *chat = cJSON_GetObjectItem(cb_message, "chat");
+                cJSON *chat_id_obj = chat ? cJSON_GetObjectItem(chat, "id") : NULL;
+                int64_t retry_chat_id =
+                    cJSON_IsNumber(chat_id_obj) ? (int64_t)chat_id_obj->valuedouble : 0;
+
+                tg_answer_callback_query(bot, cb_id->valuestring, "Retrying...");
+
+                if (retry_chat_id != 0) {
+                    char reply[MAX_REPLY_LEN];
+                    int rc = processor_retry_ocr_with_model(bot->processor, (int64_t)file_id, model,
+                                                            reply, sizeof(reply));
+                    if (rc == 0) {
+                        tg_send_message_with_keyboard(bot, retry_chat_id, reply, (int64_t)file_id);
+                    } else {
+                        tg_send_message(bot, retry_chat_id, reply);
+                    }
+                }
+            } else {
+                tg_answer_callback_query(bot, cb_id->valuestring, NULL);
+            }
         } else {
             tg_answer_callback_query(bot, cb_id->valuestring, NULL);
         }
@@ -386,14 +489,14 @@ void bot_dispatch_update(TgBot *bot, cJSON *update) {
         return;
     }
 
-    /* Photo (Telegram compresses; pick largest size) */
+    /* Photo */
     cJSON *photos = cJSON_GetObjectItem(message, "photo");
     if (cJSON_IsArray(photos)) {
         dispatch_photo(bot, chat_id, user_id, photos);
         return;
     }
 
-    /* Document (PDF, WebP, uncompressed image, etc.) */
+    /* Document */
     cJSON *doc = cJSON_GetObjectItem(message, "document");
     if (doc) {
         dispatch_document(bot, chat_id, user_id, doc);

@@ -91,6 +91,15 @@ Optional (database):
 | `POSTGRES_USER` | — | Database user |
 | `POSTGRES_PASSWORD` | — | PostgreSQL password |
 
+Optional (Gemini):
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_MODELS` | `gemma-3-12b-it,gemma-3-27b-it,gemini-2.0-flash,gemini-2.5-flash` | Comma-separated available models |
+| `GEMINI_API_BASE` | `https://generativelanguage.googleapis.com/v1beta/models` | API endpoint |
+| `GEMINI_HTTP_TIMEOUT` | `600` | HTTP timeout in seconds |
+| `GEMINI_FALLBACK_MODEL` | `gemma-3-27b-it` | Fallback model on rate limit |
+| `GEMINI_FALLBACK_ENABLED` | `0` | Enable automatic fallback |
+
 ## Usage
 
 Send a photo to the bot on Telegram. It will:
@@ -103,7 +112,12 @@ Send a photo to the bot on Telegram. It will:
 
 Commands:
 - `/start` — welcome message
+- `/help` — show instructions
 - `/list` — show recent receipts
+- `/delete <id>` — delete a file by its ID
+- `/retry <id>` — retry OCR parsing (re-parses existing OCR text)
+- `/models` — list available Gemini models
+- `/retrywith <model> <id>` — re-run OCR with a specific model (re-extracts text)
 
 ## Development
 
@@ -154,44 +168,54 @@ Your editor's clangd extension will pick it up. The `.clangd` config handles cJS
 
 ```
 ├── src/
-│   ├── main.c              # entry point, lifecycle
-│   ├── bot.c / bot.h       # Telegram bot (polling, commands)
-│   ├── processor.c / .h    # orchestration (hash, save, OCR, parse)
-│   ├── gemini.c / .h       # Gemini API client (OCR + parsing)
-│   ├── config.c / .h       # environment variable loading
-│   ├── utils.c / utils.h   # shared utilities (GrowBuf, base64, URL encoding)
-│   ├── db_backend.h        # database backend interface
-│   ├── db.h                # data types (FileRecord, ParsedReceipt)
-│   ├── db_sqlite.c         # SQLite implementation
-│   ├── db_postgres.c       # PostgreSQL implementation
-│   ├── storage_backend.h   # storage backend interface
-│   ├── storage.h           # storage utilities (SHA-256, filename, MIME)
-│   ├── storage_local.c     # local filesystem implementation
-│   └── storage_supabase.c  # Supabase Storage implementation
+│   ├── main.c                    # entry point, DI container
+│   ├── config.c / .h             # environment variable loading
+│   ├── processor.c / .h          # orchestration (hash, save, OCR, parse)
+│   ├── utils.c / utils.h         # shared utilities (GrowBuf, base64, URL encoding)
+│   ├── telegram/
+│   │   ├── bot.c / bot.h         # Telegram bot (lifecycle, HTTP protocol)
+│   │   ├── bot_commands.c / .h   # command routing, update dispatch
+│   │   └── bot_telegram.c / .h   # MessageSender interface
+│   ├── db/
+│   │   ├── db_backend.h          # database backend interface
+│   │   ├── db.h                  # data types (FileRecord, ParsedReceipt)
+│   │   ├── db_sqlite.c           # SQLite implementation
+│   │   └── db_postgres.c         # PostgreSQL implementation
+│   ├── storage/
+│   │   ├── storage_backend.h     # storage backend interface
+│   │   ├── storage.h             # storage utilities (SHA-256, filename, MIME)
+│   │   ├── storage_local.c       # local filesystem implementation
+│   │   └── storage_supabase.c    # Supabase Storage implementation
+│   ├── ocr/
+│   │   ├── gemini.c / .h         # Gemini API client (OCR + parsing)
+│   │   ├── ocr_service.c / .h    # OCR abstraction layer
+│   │   └── prompt_fetcher.c / .h # prompt management
+│   └── infra/
+│       ├── http_client.c / .h    # HTTP client wrapper
+│       ├── file_repository.c / .h    # repository pattern (DB + storage)
+│       ├── file_repository_memory.c  # in-memory test implementation
+│       ├── document_store.c / .h     # document storage abstraction
+│       └── event_bus.c / .h          # publish/subscribe notification
 ├── tests/
-│   ├── main.c              # test runner (per-module binaries)
-│   ├── test_runner.h       # minimal test framework macros
-│   ├── test_helpers.h      # shared test helpers
-│   ├── test_db.c           # database tests
-│   ├── test_json.c         # JSON parsing + Gemini mock tests
-│   ├── test_storage.c      # storage utility tests
-│   ├── test_config.c       # config loading tests
-│   └── test_edge_cases.c   # boundary/edge case tests
+│   ├── main.c                    # test runner (per-module binaries)
+│   ├── test_runner.h             # minimal test framework macros
+│   ├── test_helpers.h            # shared test helpers
+│   ├── test_*.c                  # per-module test suites
+│   └── test_runner.h
 ├── tools/
-│   └── install.sh          # local tool installer
-├── third_party/cjson/      # cJSON library (vendored)
-├── migrations/             # database schema files
-├── .clang-format           # code formatter config
-├── .clang-tidy             # static analysis config
-├── .clangd                 # IDE config
-├── .github/workflows/ci.yml  # CI pipeline
-├── build.sh                # build script
-├── ci.sh                   # local CI (all checks)
-├── test.sh                 # test script
-├── run.sh                  # run script
-├── CMakeLists.txt          # build configuration
-├── Dockerfile              # multi-stage Docker build
-└── RULES.md                # coding conventions
+│   └── install.sh                # local tool installer
+├── third_party/cjson/            # cJSON library (vendored)
+├── migrations/                   # database schema files
+├── .clang-format                 # code formatter config
+├── .clang-tidy                   # static analysis config
+├── .clangd                       # IDE config
+├── build.sh                      # build script
+├── ci.sh                         # local CI (all checks)
+├── test.sh                       # test script
+├── run.sh                        # run script
+├── CMakeLists.txt                # build configuration
+├── Dockerfile                    # multi-stage Docker build
+└── RULES.md                      # coding conventions
 ```
 
 ### Pushing via Docker (separate GitHub identity)

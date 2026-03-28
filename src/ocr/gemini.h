@@ -24,6 +24,11 @@ void gemini_free(GeminiClient *client);
 char *gemini_extract_text(GeminiClient *client, const uint8_t *data, size_t len,
                           const char *filename);
 
+/* Same as gemini_extract_text but uses the specified model instead of default.
+ * model: Gemini model name (e.g., "gemini-2.5-flash"). */
+char *gemini_extract_text_with_model(GeminiClient *client, const uint8_t *data, size_t len,
+                                     const char *filename, const char *model);
+
 /* Send OCR-extracted text to Gemini for receipt parsing.
  * Returns a heap-allocated NUL-terminated JSON string — caller must free().
  * On error: returns NULL and writes a message to stderr. */

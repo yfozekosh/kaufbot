@@ -383,3 +383,112 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
     }
     return 0;
 }
+
+int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *model,
+                                   char *reply_buf, size_t reply_buf_len) {
+    if (!p || !model || !reply_buf || reply_buf_len == 0)
+        return -1;
+
+    /* Look up file record */
+    FileRecord rec;
+    int rc = file_repo_find_by_id(p->repo, file_id, &rec);
+    if (rc != FILE_REPO_OK) {
+        snprintf(reply_buf, reply_buf_len, "\xF0\x9F\x94\xB4 File with ID `%lld` not found.",
+                 (long long)file_id);
+        return -1;
+    }
+
+    LOG_INFO("retry OCR with model %s for file id=%lld: %s", model, (long long)file_id,
+             rec.saved_file_name);
+
+    /* Read original file data from storage */
+    size_t data_len = 0;
+    uint8_t *data =
+        storage_backend_read_binary(file_repo_get_storage(p->repo), rec.saved_file_name, &data_len);
+    if (!data || data_len == 0) {
+        free(data);
+        snprintf(reply_buf, reply_buf_len,
+                 "\xF0\x9F\x94\xB4 *Cannot Retry*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n\n"
+                 "Original file is missing from storage.",
+                 rec.original_file_name, (long long)file_id);
+        return -1;
+    }
+
+    /* Run OCR with the specified model */
+    char *new_ocr_text = NULL;
+    rc = ocr_extract_text_with_model(p->ocr, data, data_len, rec.original_file_name, model,
+                                     &new_ocr_text);
+    free(data);
+
+    if (rc != OCR_OK || !new_ocr_text) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xF0\x9F\x94\xB4 *OCR Failed*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n"
+                 "\xF0\x9F\xA4\x96 Model: `%s`\n\n"
+                 "OCR extraction failed with model `%s`.",
+                 rec.original_file_name, (long long)file_id, model, model);
+        return -1;
+    }
+
+    /* Save new OCR text */
+    char ocr_filename[MAX_FILENAME];
+    storage_ocr_filename(rec.saved_file_name, ocr_filename, sizeof(ocr_filename));
+
+    if (storage_backend_save_text(p->storage, ocr_filename, new_ocr_text) != 0) {
+        LOG_ERROR("failed to write OCR file %s", ocr_filename);
+    }
+
+    rc = file_repo_mark_ocr_complete(p->repo, rec.id, ocr_filename);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error marking OCR done");
+    }
+
+    /* Parse the receipt */
+    char *parsed_json = NULL;
+    rc = ocr_parse_receipt(p->ocr, new_ocr_text, &parsed_json);
+    free(new_ocr_text);
+
+    if (rc != OCR_OK || !parsed_json) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Parsing Failed*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n"
+                 "\xF0\x9F\xA4\x96 Model: `%s`\n\n"
+                 "OCR succeeded but parsing failed.",
+                 rec.original_file_name, (long long)file_id, model);
+        return -1;
+    }
+
+    rc = file_repo_mark_parsing_complete(p->repo, file_id, parsed_json);
+    if (rc != FILE_REPO_OK) {
+        LOG_ERROR("repository error saving parsed receipt");
+    }
+
+    cJSON *json = cJSON_Parse(parsed_json);
+    if (!json) {
+        snprintf(reply_buf, reply_buf_len,
+                 "\xE2\x9A\xA0\xEF\xB8\x8F *Invalid JSON*\n\n"
+                 "\xF0\x9F\x93\x84 File: `%s`\n"
+                 "\xF0\x9F\x94\x91 ID: `%lld`\n"
+                 "\xF0\x9F\xA4\x96 Model: `%s`",
+                 rec.original_file_name, (long long)file_id, model);
+        free(parsed_json);
+        return 0;
+    }
+
+    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
+                             rec.original_file_name, (size_t)rec.file_size_bytes, json);
+    cJSON_Delete(json);
+    free(parsed_json);
+
+    size_t len = strlen(reply_buf);
+    if (len + 64 < reply_buf_len) {
+        snprintf(reply_buf + len, reply_buf_len - len,
+                 "\n\n\xF0\x9F\x94\x91 ID: `%lld`\n\xF0\x9F\xA4\x96 Model: `%s`", (long long)rec.id,
+                 model);
+    }
+    return 0;
+}

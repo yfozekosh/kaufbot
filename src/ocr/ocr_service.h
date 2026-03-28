@@ -28,6 +28,10 @@ typedef struct {
     int (*extract_text)(void *ctx, const uint8_t *data, size_t len, const char *filename,
                         char **out_text);
 
+    /* Extract text with a specific model. Caller must free *out_text on success */
+    int (*extract_text_with_model)(void *ctx, const uint8_t *data, size_t len, const char *filename,
+                                   const char *model, char **out_text);
+
     /* Parse receipt OCR text into structured JSON. Caller must free *out_json on success */
     int (*parse_receipt)(void *ctx, const char *ocr_text, char **out_json);
 
@@ -50,6 +54,20 @@ static inline int ocr_extract_text(OCRService *ocr, const uint8_t *data, size_t 
     if (!ocr || !ocr->ops || !data || !filename || !out_text) {
         return OCR_ERR_INVALID_ARG;
     }
+    return ocr->ops->extract_text(ocr->internal, data, len, filename, out_text);
+}
+
+static inline int ocr_extract_text_with_model(OCRService *ocr, const uint8_t *data, size_t len,
+                                              const char *filename, const char *model,
+                                              char **out_text) {
+    if (!ocr || !ocr->ops || !data || !filename || !model || !out_text) {
+        return OCR_ERR_INVALID_ARG;
+    }
+    if (ocr->ops->extract_text_with_model) {
+        return ocr->ops->extract_text_with_model(ocr->internal, data, len, filename, model,
+                                                 out_text);
+    }
+    /* Fallback: use default extract */
     return ocr->ops->extract_text(ocr->internal, data, len, filename, out_text);
 }
 
