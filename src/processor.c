@@ -58,7 +58,9 @@ void processor_free(Processor *p) {
 
 /* ── pipeline sub-steps ──────────────────────────────────────────────────── */
 
-static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, int tokens) {
+static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, int tokens,
+                              StorageBackend *storage, const char *saved_name,
+                              const char *ocr_name) {
     memset(data, 0, sizeof(ReceiptData));
     data->file_id = file_id;
     data->tokens_used = tokens;
@@ -76,8 +78,8 @@ static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, i
     if (total && cJSON_IsNumber(total))
         data->total_sum = total->valuedouble;
 
-    cJSON *is_receipt = cJSON_GetObjectItem(json, "is_receipt");
-    if (is_receipt && cJSON_IsFalse(is_receipt))
+    cJSON *is_receipt_j = cJSON_GetObjectItem(json, "is_receipt");
+    if (is_receipt_j && cJSON_IsFalse(is_receipt_j))
         data->is_receipt = false;
 
     cJSON *quality = cJSON_GetObjectItem(json, "image_quality");
@@ -102,6 +104,16 @@ static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, i
             cJSON *name = cJSON_GetObjectItem(item, "original_name");
             if (name && cJSON_IsString(name))
                 snprintf(li->original_name, sizeof(li->original_name), "%s", name->valuestring);
+            cJSON *trans = cJSON_GetObjectItem(item, "english_translation");
+            if (trans && cJSON_IsString(trans))
+                snprintf(li->english_translation, sizeof(li->english_translation), "%s",
+                         trans->valuestring);
+            cJSON *uom = cJSON_GetObjectItem(item, "unit_of_measure");
+            if (uom && cJSON_IsString(uom))
+                snprintf(li->unit_of_measure, sizeof(li->unit_of_measure), "%s", uom->valuestring);
+            cJSON *cat = cJSON_GetObjectItem(item, "category");
+            if (cat && cJSON_IsString(cat))
+                snprintf(li->category, sizeof(li->category), "%s", cat->valuestring);
             cJSON *price = cJSON_GetObjectItem(item, "price");
             if (price && cJSON_IsNumber(price))
                 li->price = price->valuedouble;
@@ -115,11 +127,29 @@ static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, i
                 li->discount = discount->valuedouble;
         }
     }
+
+    /* Generate download URLs */
+    if (storage && saved_name && saved_name[0]) {
+        char *url = storage_backend_get_public_url(storage, saved_name);
+        if (url) {
+            snprintf(data->original_url, sizeof(data->original_url), "%s", url);
+            free(url);
+        }
+    }
+    if (storage && ocr_name && ocr_name[0]) {
+        char *url = storage_backend_get_public_url(storage, ocr_name);
+        if (url) {
+            snprintf(data->ocr_url, sizeof(data->ocr_url), "%s", url);
+            free(url);
+        }
+    }
 }
 
-ReplyMessage *processor_build_reply(cJSON *json, int64_t file_id, int tokens) {
+ReplyMessage *processor_build_reply(cJSON *json, int64_t file_id, int tokens,
+                                    StorageBackend *storage, const char *saved_name,
+                                    const char *ocr_name) {
     ReceiptData data;
-    fill_receipt_data(&data, json, file_id, tokens);
+    fill_receipt_data(&data, json, file_id, tokens, storage, saved_name, ocr_name);
     return reply_builder_format_receipt(&data);
 }
 
@@ -219,9 +249,9 @@ static char *processor_parse_receipt(Processor *p, int64_t file_id, const char *
 
 void processor_handle_file(Processor *p, const char *original_name, const uint8_t *data,
                            size_t data_len, char *reply_buf, size_t reply_buf_len,
-                           int64_t *out_file_id) {
-    if (out_file_id)
-        *out_file_id = 0;
+                           int64_t *out_id) {
+    if (out_id)
+        *out_id = 0;
     if (!p || !original_name || !data || !reply_buf || reply_buf_len == 0) {
         LOG_ERROR("processor_handle_file: invalid parameters");
         return;
@@ -249,8 +279,8 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
                             reply_buf_len) != 0)
         return;
 
-    if (out_file_id)
-        *out_file_id = rec.id;
+    if (out_id)
+        *out_id = rec.id;
 
     char *ocr_text = processor_run_ocr(p, original_name, data, data_len, rec.saved_file_name, &rec,
                                        reply_buf, reply_buf_len);
@@ -284,7 +314,8 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
         free(parsed_json);
         return;
     }
-    ReplyMessage *msg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    ReplyMessage *msg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr), p->storage,
+                                              rec.saved_file_name, ocr_filename);
     if (msg) {
         snprintf(reply_buf, reply_buf_len, "%s", msg->text);
         reply_message_free(msg);
@@ -361,7 +392,9 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
         return 0;
     }
 
-    ReplyMessage *reply_msg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    ReplyMessage *reply_msg =
+        processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr), p->storage,
+                              rec.saved_file_name, rec.ocr_file_name);
     if (reply_msg) {
         snprintf(reply_buf, reply_buf_len, "%s", reply_msg->text);
         reply_message_free(reply_msg);
@@ -466,7 +499,8 @@ int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *mo
         return 0;
     }
 
-    ReplyMessage *rmsg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    ReplyMessage *rmsg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr),
+                                               p->storage, rec.saved_file_name, rec.ocr_file_name);
     if (rmsg) {
         size_t rlen = strlen(rmsg->text);
         if (rlen + 64 < reply_buf_len) {

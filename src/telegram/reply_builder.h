@@ -10,9 +10,13 @@
 #define MAX_REPLY_ITEMS    30
 #define MAX_ITEM_NAME_LEN  128
 #define MAX_STORE_NAME_LEN 128
+#define MAX_DOWNLOAD_URL   512
 
 typedef struct {
     char original_name[MAX_ITEM_NAME_LEN];
+    char english_translation[MAX_ITEM_NAME_LEN];
+    char unit_of_measure[32];
+    char category[64];
     double price;
     double amount;
     double discount;
@@ -30,6 +34,11 @@ typedef struct {
 
     int64_t file_id;
     int tokens_used;
+
+    /* Download links (NULL if not available) */
+    char original_url[MAX_DOWNLOAD_URL];
+    char ocr_url[MAX_DOWNLOAD_URL];
+    char json_url[MAX_DOWNLOAD_URL];
 } ReceiptData;
 
 /* ── Output: formatted message for Telegram ───────────────────────────────── */

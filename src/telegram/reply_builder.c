@@ -64,23 +64,36 @@ ReplyMessage *reply_builder_format_receipt(const ReceiptData *data) {
         if (rem <= 0)
             break;
 
-        if (item->discount > 0.005) {
-            pos += snprintf(buf + pos, (size_t)rem,
-                            "  `%d.` %s\n"
-                            "      `%.2f` x `%.2f` - `%.2f` = `%.2f EUR`\n",
-                            i + 1, item->original_name[0] ? item->original_name : "?", item->price,
-                            item->amount, item->discount, lt);
-        } else if (item->amount > 1.005) {
-            pos += snprintf(buf + pos, (size_t)rem,
-                            "  `%d.` %s\n"
-                            "      `%.2f` x `%.2f` = `%.2f EUR`\n",
-                            i + 1, item->original_name[0] ? item->original_name : "?", item->price,
-                            item->amount, lt);
+        const char *display_name =
+            item->english_translation[0] ? item->english_translation : item->original_name;
+
+        /* Item header with category tag */
+        if (item->category[0]) {
+            pos += snprintf(buf + pos, (size_t)rem, "  `%d.` %s _%s_\n", i + 1, display_name,
+                            item->category);
         } else {
-            pos += snprintf(buf + pos, (size_t)rem,
-                            "  `%d.` %s\n"
-                            "      `%.2f EUR`\n",
-                            i + 1, item->original_name[0] ? item->original_name : "?", lt);
+            pos += snprintf(buf + pos, (size_t)rem, "  `%d.` %s\n", i + 1, display_name);
+        }
+
+        /* Price line */
+        rem = (int)len - pos;
+        if (rem <= 0)
+            break;
+
+        const char *uom = item->unit_of_measure[0] ? item->unit_of_measure : "pcs";
+
+        if (item->discount > 0.005 && item->amount > 1.005) {
+            pos +=
+                snprintf(buf + pos, (size_t)rem, "      `%.2f` x `%.2f %s` - `%.2f` = `%.2f EUR`\n",
+                         item->price, item->amount, uom, item->discount, lt);
+        } else if (item->discount > 0.005) {
+            pos += snprintf(buf + pos, (size_t)rem, "      `%.2f EUR` - `%.2f` = `%.2f EUR`\n",
+                            item->price, item->discount, lt);
+        } else if (item->amount > 1.005) {
+            pos += snprintf(buf + pos, (size_t)rem, "      `%.2f` x `%.2f %s` = `%.2f EUR`\n",
+                            item->price, item->amount, uom, lt);
+        } else {
+            pos += snprintf(buf + pos, (size_t)rem, "      `%.2f EUR`\n", lt);
         }
     }
 
@@ -89,14 +102,31 @@ ReplyMessage *reply_builder_format_receipt(const ReceiptData *data) {
         snprintf(buf + pos, len - pos, "\n\xF0\x9F\x92\xB0 *Total:* `%.2f EUR`", data->total_sum);
 
     if (diff_is_significant(calculated_total, data->total_sum)) {
-        pos += snprintf(buf + pos, len - pos,
-                        "\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated `%.2f EUR` — check totals",
-                        calculated_total);
+        pos +=
+            snprintf(buf + pos, len - pos,
+                     "\n\xE2\x9A\xA0\xEF\xB8\x8F Calculated `%.2f EUR` \xe2\x80\x94 check totals",
+                     calculated_total);
     }
 
     /* Tokens */
     if (data->tokens_used > 0) {
         pos += snprintf(buf + pos, len - pos, "\n\xE2\x9A\xA1 Tokens: `%d`", data->tokens_used);
+    }
+
+    /* Download links */
+    if (data->original_url[0] || data->ocr_url[0] || data->json_url[0]) {
+        pos += snprintf(buf + pos, len - pos, "\n");
+        if (data->original_url[0]) {
+            pos += snprintf(buf + pos, len - pos, "\n\xF0\x9F\x93\x84 [Original](%s)",
+                            data->original_url);
+        }
+        if (data->ocr_url[0]) {
+            pos +=
+                snprintf(buf + pos, len - pos, "\n\xF0\x9F\x93\x84 [OCR text](%s)", data->ocr_url);
+        }
+        if (data->json_url[0]) {
+            pos += snprintf(buf + pos, len - pos, "\n\xF0\x9F\x93\x84 [JSON](%s)", data->json_url);
+        }
     }
 
     return msg;

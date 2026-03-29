@@ -12,7 +12,7 @@
 
 /* Helper to build reply from json */
 static void build_test_reply(char *reply, size_t len, cJSON *json) {
-    ReplyMessage *m = processor_build_reply(json, 0, 0);
+    ReplyMessage *m = processor_build_reply(json, 0, 0, NULL, NULL, NULL);
     if (m) {
         snprintf(reply, len, "%s", m->text);
         reply_message_free(m);

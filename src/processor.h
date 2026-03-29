@@ -39,7 +39,9 @@ int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *mo
 
 /* Build a reply message from parsed JSON. Returns a heap-allocated ReplyMessage.
  * Caller must call reply_message_free(). */
-ReplyMessage *processor_build_reply(cJSON *json, int64_t file_id, int tokens);
+ReplyMessage *processor_build_reply(cJSON *json, int64_t file_id, int tokens,
+                                    StorageBackend *storage, const char *saved_name,
+                                    const char *ocr_name);
 
 /* Free the processor.  Safe to call with NULL. */
 void processor_free(Processor *p);
