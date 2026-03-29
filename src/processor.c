@@ -1,6 +1,7 @@
 #include "processor.h"
 #include "cJSON.h"
 #include "config.h"
+#include "reply_builder.h"
 #include "storage.h"
 
 #include <stdio.h>
@@ -57,114 +58,69 @@ void processor_free(Processor *p) {
 
 /* ── pipeline sub-steps ──────────────────────────────────────────────────── */
 
-static int diff_is_significant(double a, double b) {
-    double diff = a - b;
-    if (diff < 0)
-        diff = -diff;
-    return diff > 0.015;
-}
+static void fill_receipt_data(ReceiptData *data, cJSON *json, int64_t file_id, int tokens) {
+    memset(data, 0, sizeof(ReceiptData));
+    data->file_id = file_id;
+    data->tokens_used = tokens;
+    data->image_quality = -1;
+    data->reported_item_count = -1;
+    data->is_receipt = true;
 
-void processor_build_reply_ok(char *reply_buf, size_t buf_len, const char *saved_name,
-                              const char *ocr_filename, const char *original_name, size_t data_len,
-                              cJSON *json, int tokens) {
-    (void)saved_name;
-    (void)ocr_filename;
-    (void)original_name;
-    (void)data_len;
     cJSON *store_info = cJSON_GetObjectItem(json, "store_information");
     cJSON *store_name = store_info ? cJSON_GetObjectItem(store_info, "name") : NULL;
-    cJSON *total_sum = cJSON_GetObjectItem(json, "total_sum");
-    cJSON *line_items = cJSON_GetObjectItem(json, "line_items");
+    if (store_name && cJSON_IsString(store_name) && store_name->valuestring) {
+        snprintf(data->store_name, sizeof(data->store_name), "%s", store_name->valuestring);
+    }
+
+    cJSON *total = cJSON_GetObjectItem(json, "total_sum");
+    if (total && cJSON_IsNumber(total))
+        data->total_sum = total->valuedouble;
+
     cJSON *is_receipt = cJSON_GetObjectItem(json, "is_receipt");
-    cJSON *image_quality = cJSON_GetObjectItem(json, "image_quality");
-    cJSON *reported_count = cJSON_GetObjectItem(json, "reported_item_count");
+    if (is_receipt && cJSON_IsFalse(is_receipt))
+        data->is_receipt = false;
 
-    const char *name = (store_name && cJSON_IsString(store_name) && store_name->valuestring)
-                           ? store_name->valuestring
-                           : "Unknown";
-    double parsed_total = (total_sum && cJSON_IsNumber(total_sum)) ? total_sum->valuedouble : 0;
-    int item_count = (line_items && cJSON_IsArray(line_items)) ? cJSON_GetArraySize(line_items) : 0;
-    int not_receipt = (is_receipt && cJSON_IsFalse(is_receipt));
+    cJSON *quality = cJSON_GetObjectItem(json, "image_quality");
+    if (quality && cJSON_IsNumber(quality))
+        data->image_quality = quality->valueint;
 
-    /* Calculate total from line items and format */
-    double calculated_total = 0.0;
-    char items_text[2048] = {0};
-    int pos = 0;
+    cJSON *reported = cJSON_GetObjectItem(json, "reported_item_count");
+    if (reported && cJSON_IsNumber(reported))
+        data->reported_item_count = reported->valueint;
 
-    if (line_items && cJSON_IsArray(line_items)) {
-        for (int i = 0; i < item_count; i++) {
-            cJSON *item = cJSON_GetArrayItem(line_items, i);
+    cJSON *items = cJSON_GetObjectItem(json, "line_items");
+    if (items && cJSON_IsArray(items)) {
+        int n = cJSON_GetArraySize(items);
+        if (n > MAX_REPLY_ITEMS)
+            n = MAX_REPLY_ITEMS;
+        data->item_count = n;
+        for (int i = 0; i < n; i++) {
+            cJSON *item = cJSON_GetArrayItem(items, i);
             if (!item)
                 continue;
-
-            cJSON *orig_name = cJSON_GetObjectItem(item, "original_name");
+            ReplyLineItem *li = &data->items[i];
+            cJSON *name = cJSON_GetObjectItem(item, "original_name");
+            if (name && cJSON_IsString(name))
+                snprintf(li->original_name, sizeof(li->original_name), "%s", name->valuestring);
             cJSON *price = cJSON_GetObjectItem(item, "price");
+            if (price && cJSON_IsNumber(price))
+                li->price = price->valuedouble;
             cJSON *amount = cJSON_GetObjectItem(item, "amount");
+            if (amount && cJSON_IsNumber(amount))
+                li->amount = amount->valuedouble;
+            else
+                li->amount = 1.0;
             cJSON *discount = cJSON_GetObjectItem(item, "discount");
-
-            const char *item_name =
-                (orig_name && cJSON_IsString(orig_name) && orig_name->valuestring)
-                    ? orig_name->valuestring
-                    : "Unknown";
-            double item_price = (price && cJSON_IsNumber(price)) ? price->valuedouble : 0.0;
-            double item_amount = (amount && cJSON_IsNumber(amount)) ? amount->valuedouble : 1.0;
-            double item_discount =
-                (discount && cJSON_IsNumber(discount)) ? discount->valuedouble : 0.0;
-            double line_total = item_price * item_amount - item_discount;
-            calculated_total += line_total;
-
-            int remaining = (int)sizeof(items_text) - pos;
-            if (remaining > 0) {
-                if (item_discount > 0.005) {
-                    pos += snprintf(items_text + pos, (size_t)remaining,
-                                    "  %d. %s: %.2f EUR x %.2f - %.2f = %.2f EUR\n", i + 1,
-                                    item_name, item_price, item_amount, item_discount, line_total);
-                } else {
-                    pos += snprintf(items_text + pos, (size_t)remaining,
-                                    "  %d. %s: %.2f EUR x %.2f = %.2f EUR\n", i + 1, item_name,
-                                    item_price, item_amount, line_total);
-                }
-            }
+            if (discount && cJSON_IsNumber(discount))
+                li->discount = discount->valuedouble;
         }
     }
+}
 
-    /* Build reply */
-    pos = 0;
-
-    if (not_receipt) {
-        pos += snprintf(reply_buf + pos, buf_len - pos, "Not a receipt\n\n");
-    }
-
-    pos += snprintf(reply_buf + pos, buf_len - pos, "Store: %s\n\n", name);
-
-    /* Image quality */
-    if (image_quality && cJSON_IsString(image_quality)) {
-        pos +=
-            snprintf(reply_buf + pos, buf_len - pos, "Quality: %s\n", image_quality->valuestring);
-    }
-
-    /* Item count */
-    if (reported_count && cJSON_IsNumber(reported_count)) {
-        pos += snprintf(reply_buf + pos, buf_len - pos, "Items: %d (receipt says %d)\n\n",
-                        item_count, reported_count->valueint);
-    } else {
-        pos += snprintf(reply_buf + pos, buf_len - pos, "Items: %d\n\n", item_count);
-    }
-
-    /* Line items */
-    pos += snprintf(reply_buf + pos, buf_len - pos, "%s\n", items_text);
-
-    /* Totals */
-    pos += snprintf(reply_buf + pos, buf_len - pos, "Total: %.2f EUR", parsed_total);
-
-    if (diff_is_significant(calculated_total, parsed_total)) {
-        pos += snprintf(reply_buf + pos, buf_len - pos, " (calc: %.2f)", calculated_total);
-    }
-
-    /* Tokens */
-    if (tokens > 0) {
-        pos += snprintf(reply_buf + pos, buf_len - pos, "\nTokens: %d", tokens);
-    }
+ReplyMessage *processor_build_reply(cJSON *json, int64_t file_id, int tokens) {
+    ReceiptData data;
+    fill_receipt_data(&data, json, file_id, tokens);
+    return reply_builder_format_receipt(&data);
 }
 
 /* ── pipeline ─────────────────────────────────────────────────────────────── */
@@ -328,8 +284,11 @@ void processor_handle_file(Processor *p, const char *original_name, const uint8_
         free(parsed_json);
         return;
     }
-    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
-                             original_name, data_len, json, ocr_get_last_tokens(p->ocr));
+    ReplyMessage *msg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    if (msg) {
+        snprintf(reply_buf, reply_buf_len, "%s", msg->text);
+        reply_message_free(msg);
+    }
     cJSON_Delete(json);
     free(ocr_text);
     free(parsed_json);
@@ -402,9 +361,11 @@ int processor_retry_ocr(Processor *p, int64_t file_id, char *reply_buf, size_t r
         return 0;
     }
 
-    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, rec.ocr_file_name,
-                             rec.original_file_name, (size_t)rec.file_size_bytes, json,
-                             ocr_get_last_tokens(p->ocr));
+    ReplyMessage *reply_msg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    if (reply_msg) {
+        snprintf(reply_buf, reply_buf_len, "%s", reply_msg->text);
+        reply_message_free(reply_msg);
+    }
     cJSON_Delete(json);
     free(parsed_json);
     return 0;
@@ -505,17 +466,18 @@ int processor_retry_ocr_with_model(Processor *p, int64_t file_id, const char *mo
         return 0;
     }
 
-    processor_build_reply_ok(reply_buf, reply_buf_len, rec.saved_file_name, ocr_filename,
-                             rec.original_file_name, (size_t)rec.file_size_bytes, json,
-                             ocr_get_last_tokens(p->ocr));
+    ReplyMessage *rmsg = processor_build_reply(json, rec.id, ocr_get_last_tokens(p->ocr));
+    if (rmsg) {
+        size_t rlen = strlen(rmsg->text);
+        if (rlen + 64 < reply_buf_len) {
+            snprintf(rmsg->text + rlen, sizeof(rmsg->text) - rlen,
+                     "\n\n\xF0\x9F\x94\x91 ID: `%lld`\n\xF0\x9F\xA4\x96 Model: `%s`",
+                     (long long)rec.id, model);
+        }
+        snprintf(reply_buf, reply_buf_len, "%s", rmsg->text);
+        reply_message_free(rmsg);
+    }
     cJSON_Delete(json);
     free(parsed_json);
-
-    size_t len = strlen(reply_buf);
-    if (len + 64 < reply_buf_len) {
-        snprintf(reply_buf + len, reply_buf_len - len,
-                 "\n\n\xF0\x9F\x94\x91 ID: `%lld`\n\xF0\x9F\xA4\x96 Model: `%s`", (long long)rec.id,
-                 model);
-    }
     return 0;
 }

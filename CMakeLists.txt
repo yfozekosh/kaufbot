@@ -42,9 +42,10 @@ set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/config.c
     ${CMAKE_SOURCE_DIR}/src/processor.c
     ${CMAKE_SOURCE_DIR}/src/utils.c
-    ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
-    ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
-    ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/reply_builder.c
     ${CMAKE_SOURCE_DIR}/src/db/db_sqlite.c
     ${CMAKE_SOURCE_DIR}/src/storage/storage_local.c
     ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
@@ -137,6 +138,7 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/infra/file_repository.c
         ${CMAKE_SOURCE_DIR}/src/infra/file_repository_memory.c
         ${CMAKE_SOURCE_DIR}/src/ocr/ocr_service.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/reply_builder.c
     )
     target_compile_definitions(test_processor PRIVATE TEST_BUILD)
 
@@ -169,6 +171,7 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/telegram/bot.c
         ${CMAKE_SOURCE_DIR}/src/telegram/bot_commands.c
         ${CMAKE_SOURCE_DIR}/src/telegram/bot_telegram.c
+        ${CMAKE_SOURCE_DIR}/src/telegram/reply_builder.c
         ${CMAKE_SOURCE_DIR}/src/processor.c
         ${CMAKE_SOURCE_DIR}/src/ocr/gemini.c
         ${CMAKE_SOURCE_DIR}/src/config.c

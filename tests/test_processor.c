@@ -5,9 +5,21 @@
 #include "db_backend.h"
 #include "gemini.h"
 #include "processor.h"
+#include "reply_builder.h"
 #include "storage_backend.h"
 #include "test_helpers.h"
 #include "test_runner.h"
+
+/* Helper to build reply from json */
+static void build_test_reply(char *reply, size_t len, cJSON *json) {
+    ReplyMessage *m = processor_build_reply(json, 0, 0);
+    if (m) {
+        snprintf(reply, len, "%s", m->text);
+        reply_message_free(m);
+    } else {
+        reply[0] = '\0';
+    }
+}
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -299,16 +311,15 @@ TEST_CASE(processor_reply_single_item) {
 
     cJSON *json = build_mock_receipt_json("Test Store", 3.00, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "saved.jpg", "ocr.txt", "original.jpg", 1024,
-                             json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     ASSERT_NOT_NULL(reply);
     ASSERT_TRUE(strstr(reply, "Test Store") != NULL);
     ASSERT_TRUE(strstr(reply, "Milk") != NULL);
-    ASSERT_TRUE(strstr(reply, "1.50 EUR") != NULL);
+    ASSERT_TRUE(strstr(reply, "1.50") != NULL);
     ASSERT_TRUE(strstr(reply, "3.00 EUR") != NULL);
     /* No warning expected - totals match */
-    ASSERT_TRUE(strstr(reply, "calc:") == NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -323,8 +334,7 @@ TEST_CASE(processor_reply_multiple_items) {
 
     cJSON *json = build_mock_receipt_json("Supermarket", 20.00, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "receipt.jpg", "ocr.txt", "img.jpg", 2048, json,
-                             0);
+    build_test_reply(reply, sizeof(reply), json);
 
     ASSERT_TRUE(strstr(reply, "Supermarket") != NULL);
     ASSERT_TRUE(strstr(reply, "Bread") != NULL);
@@ -332,7 +342,7 @@ TEST_CASE(processor_reply_multiple_items) {
     ASSERT_TRUE(strstr(reply, "Wine") != NULL);
     ASSERT_TRUE(strstr(reply, "20.00 EUR") != NULL);
     /* No warning - totals match */
-    ASSERT_TRUE(strstr(reply, "calc:") == NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -346,10 +356,10 @@ TEST_CASE(processor_reply_total_mismatch_warning) {
     /* Parsed total is wrong (11.00 instead of 10.00) */
     cJSON *json = build_mock_receipt_json("Store", 11.00, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 512, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     /* Should contain warning */
-    ASSERT_TRUE(strstr(reply, "calc:") != NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") != NULL);
     ASSERT_TRUE(strstr(reply, "10.00 EUR") != NULL);
     ASSERT_TRUE(strstr(reply, "11.00 EUR") != NULL);
 
@@ -365,10 +375,10 @@ TEST_CASE(processor_reply_no_warning_at_one_cent) {
     /* Exactly 1 cent difference - should NOT warn (threshold is > 1.5 cents) */
     cJSON *json = build_mock_receipt_json("Store", 1.01, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 100, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     /* Should NOT contain warning (boundary is > 0.015 for FP tolerance) */
-    ASSERT_TRUE(strstr(reply, "calc:") == NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -382,9 +392,9 @@ TEST_CASE(processor_reply_warning_over_one_cent) {
     /* Over 1.5 cents difference - SHOULD warn */
     cJSON *json = build_mock_receipt_json("Store", 1.02, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "r.jpg", "o.txt", "i.jpg", 100, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
-    ASSERT_TRUE(strstr(reply, "calc:") != NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -395,8 +405,7 @@ TEST_CASE(processor_reply_zero_items) {
     cJSON *items = cJSON_CreateArray();
     cJSON *json = build_mock_receipt_json("Empty Store", 0.00, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "empty.jpg", "empty_ocr.txt", "e.jpg", 0, json,
-                             0);
+    build_test_reply(reply, sizeof(reply), json);
 
     ASSERT_TRUE(strstr(reply, "Empty Store") != NULL);
     ASSERT_TRUE(strstr(reply, "0.00 EUR") != NULL);
@@ -412,7 +421,7 @@ TEST_CASE(processor_reply_missing_store_name) {
     cJSON_AddItemToObject(json, "line_items", items);
     cJSON_AddNumberToObject(json, "total_sum", 5.00);
 
-    processor_build_reply_ok(reply, sizeof(reply), "x.jpg", "x.txt", "x.jpg", 100, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     /* Should use "Unknown" for missing store name */
     ASSERT_TRUE(strstr(reply, "Unknown") != NULL);
@@ -430,12 +439,12 @@ TEST_CASE(processor_reply_missing_line_items) {
     cJSON_AddNumberToObject(json, "total_sum", 10.00);
     /* No line_items */
 
-    processor_build_reply_ok(reply, sizeof(reply), "x.jpg", "x.txt", "x.jpg", 100, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     ASSERT_TRUE(strstr(reply, "Store") != NULL);
     ASSERT_TRUE(strstr(reply, "0.00 EUR") != NULL);
     /* Warning expected since 0.00 != 10.00 */
-    ASSERT_TRUE(strstr(reply, "calc:") != NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") != NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
@@ -449,13 +458,13 @@ TEST_CASE(processor_reply_fractional_quantities) {
 
     cJSON *json = build_mock_receipt_json("Craft Store", 14.50, items);
 
-    processor_build_reply_ok(reply, sizeof(reply), "craft.jpg", "craft.txt", "c.jpg", 500, json, 0);
+    build_test_reply(reply, sizeof(reply), json);
 
     ASSERT_TRUE(strstr(reply, "Fabric") != NULL);
     ASSERT_TRUE(strstr(reply, "Thread") != NULL);
     ASSERT_TRUE(strstr(reply, "14.50 EUR") != NULL);
     /* No warning - totals match */
-    ASSERT_TRUE(strstr(reply, "calc:") == NULL);
+    ASSERT_TRUE(strstr(reply, "check totals") == NULL);
 
     cJSON_Delete(json);
     TEST_PASS();
